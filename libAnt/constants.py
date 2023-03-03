@@ -20,7 +20,6 @@ MESSAGE_PROXIMITY_SEARCH = 0x71
 MESSAGE_ENABLE_EXT_RX_MESSAGES = 0x66 # [0, enable (0 or 1)]
 MESSAGE_LIB_CONFIG = 0x6E  # [0, libconfig]
 
-
 # Notification messages
 MESSAGE_STARTUP = 0x6F
 

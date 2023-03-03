@@ -135,6 +135,8 @@ class USBDriver(Driver):
         return bytes(data)
 
     def _write(self, data: bytes) -> None:
+        # Diagnostic Print Statement to verify backend
+        # print(f'Data written to USB endpoint: {data}')
         return self._epOut.write(data)
 
     def _abort(self) -> None:

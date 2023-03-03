@@ -17,15 +17,21 @@ class Network:
 
 
 class Pump(threading.Thread):
-    def __init__(self, driver: Driver, initMessages, out: Queue, onSucces, onFailure):
+    def __init__(self, driver: Driver, initMessages, out: Queue, onSuccess, onFailure):
         super().__init__()
         self._stopper = threading.Event()
         self._driver = driver
         self._out = out
         self._initMessages = initMessages
         self._waiters = []
-        self._onSuccess = onSucces
+        self._onSuccess = onSuccess
         self._onFailure = onFailure
+    
+    def __enter__(self):                #Added by edyas 02/12/21
+        return self
+    
+    def __exit__(self):                 #Added by edyas 02/12/21
+        self.stop()
 
     def stop(self):
         self._driver.abort()
@@ -34,6 +40,8 @@ class Pump(threading.Thread):
     def stopped(self):
         return self._stopper.isSet()
 
+# Theres gotta be a better way to organize this run method? Right?
+# Waiters array appears to be messages that are awating a response from the stick
     def run(self):
         while not self.stopped():
             try:
@@ -42,9 +50,11 @@ class Pump(threading.Thread):
                     rst = SystemResetMessage()
                     self._waiters.append(rst)
                     d.write(rst)
+                    # Wait time for Stick to complete reset event
+                    sleep(0.6)
+                    
                     for m in self._initMessages:
                         self._waiters.append(m)
-                        d.write(m)
 
                     while not self.stopped():
                         #  Write
@@ -52,22 +62,33 @@ class Pump(threading.Thread):
                             outMsg = self._out.get(block=False)
                             self._waiters.append(outMsg)
                             d.write(outMsg)
+
                         except Empty:
                             pass
+
+                        except Exception as e:
+                            print(e)
 
                         # Read
                         try:
                             msg = d.read(timeout=1)
+                            # Diagnostic Print Statement to view incoming message
+                            # print(f'Message Recieved: {msg}')
                             if msg.type == MESSAGE_CHANNEL_EVENT:
                                 # This is a response to our outgoing message
                                 for w in self._waiters:
                                     if w.type == msg.content[1]:  # ACK
                                         self._waiters.remove(w)
-                                        #  TODO: Call waiter callback from tuple (waiter, callback)
+                                        # TODO: Call waiter callback from tuple (waiter, callback)
                                         break
                             elif msg.type == MESSAGE_CHANNEL_BROADCAST_DATA:
                                 bmsg = BroadcastMessage(msg.type, msg.content).build(msg.content)
                                 self._onSuccess(bmsg)
+
+                            elif msg.type == MESSAGE_CAPABILITIES:
+                                cap_msg = CapabilitiesMessage(msg.content).disp_capabilities()
+                                self._onSuccess(cap_msg)
+
                         except Empty:
                             pass
             except Exception as e:
@@ -120,4 +141,5 @@ class Node:
         return self._pump.is_alive()
 
     def getCapabilities(self):
+        self._out.put(RequestCapabilitiesMessage(), block=False)
         pass

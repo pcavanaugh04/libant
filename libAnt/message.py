@@ -36,6 +36,11 @@ class Message:
         return self._content
 
 
+class RequestMessage(Message):
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_CHANNEL_REQUEST, content)
+
+
 class BroadcastMessage(Message):
     def __init__(self, type: int, content: bytes):
         self.flag = None
@@ -82,7 +87,51 @@ class BroadcastMessage(Message):
 
 class SystemResetMessage(Message):
     def __init__(self):
-        super().__init__(MESSAGE_SYSTEM_RESET, b'0')
+        super().__init__(MESSAGE_SYSTEM_RESET, b'\x00') # Pcavana 2 March 2023 - Change content to b'\x00'
+
+
+# Add Capabilities Interrogation
+class RequestCapabilitiesMessage(RequestMessage):
+    def __init__(self):
+        content = bytearray([0, MESSAGE_CAPABILITIES])
+        super().__init__(content)
+
+
+class CapabilitiesMessage(Message):
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_CAPABILITIES, content)
+        self.capabilities_dict = {}
+        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
+                             'adv_options', 'adv_options2',
+                             'max_sensRcore_channels', 'adv_options3',
+                             'adv_options4']
+        for i, value in enumerate(content):
+            self.capabilities_dict[capabilities_keys[i]] = value
+
+    def disp_capabilities(self):
+        cap_str = "\nANT Device Capabilities:\n"
+        for key, value in self.capabilities_dict.items():
+            match key:
+                # TODO: Unpack options and display appropriate settings 
+                case 'std_options':
+                    cap_str += f'\t{key}: {value}\n'
+                    continue
+                case 'adv_options':
+                    cap_str += f'\t{key}: {value}\n'
+                    continue
+                case 'adv_options2':
+                    cap_str += f'\t{key}: {value}\n'
+                    continue
+                case 'adv_options3':
+                    cap_str += f'\t{key}: {value}\n'
+                    continue
+                case 'adv_options4':
+                    cap_str += f'\t{key}: {value}\n'
+                    continue
+                case _:
+                    cap_str += f'\t{key}: {value}\n'
+
+        return cap_str
 
 
 class SetNetworkKeyMessage(Message):
