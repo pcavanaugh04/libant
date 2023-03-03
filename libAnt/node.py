@@ -48,19 +48,21 @@ class Pump(threading.Thread):
                 with self._driver as d:
                     # Startup
                     rst = SystemResetMessage()
-                    self._waiters.append(rst)
+                    self._waiters.append((rst, rst.callback))
                     d.write(rst)
                     # Wait time for Stick to complete reset event
                     sleep(0.6)
-                    
+
                     for m in self._initMessages:
-                        self._waiters.append(m)
+                        if hasattr(m, 'reply_type'):
+                            self._waiters.append((m, m.callback))
+                        else:
+                            self._waiters.append((m))
 
                     while not self.stopped():
                         #  Write
                         try:
                             outMsg = self._out.get(block=False)
-                            self._waiters.append(outMsg)
                             d.write(outMsg)
 
                         except Empty:
@@ -69,15 +71,30 @@ class Pump(threading.Thread):
                         except Exception as e:
                             print(e)
 
+                        if hasattr(outMsg, 'reply_type'):
+                            self._waiters.append((outMsg, outMsg.callback))
+                        else:
+                            self._waiters.append((outMsg))
+
                         # Read
                         try:
                             msg = d.read(timeout=1)
                             # Diagnostic Print Statement to view incoming message
                             # print(f'Message Recieved: {msg}')
+                            # print(f'Message Type: {msg.type}')
+
+                            # TODO: build a library of the expected resonses associated with each control function
+
+                            # print(f'Waiter msg: {w[0]}')
+                            # print(f'Waiter msg type: {w[0].type}')
+                            # print(f'Reply Expected?: {w[0].expect_reply}')
+
                             if msg.type == MESSAGE_CHANNEL_EVENT:
                                 # This is a response to our outgoing message
                                 for w in self._waiters:
-                                    if w.type == msg.content[1]:  # ACK
+                                    if w[0].type == msg.content[1]:  # ACK
+                                        if w[1] is not None:
+                                            w[1]()
                                         self._waiters.remove(w)
                                         # TODO: Call waiter callback from tuple (waiter, callback)
                                         break
@@ -85,9 +102,17 @@ class Pump(threading.Thread):
                                 bmsg = BroadcastMessage(msg.type, msg.content).build(msg.content)
                                 self._onSuccess(bmsg)
 
-                            elif msg.type == MESSAGE_CAPABILITIES:
-                                cap_msg = CapabilitiesMessage(msg.content).disp_capabilities()
-                                self._onSuccess(cap_msg)
+                            # Framework for setting up control messages and processing replies from the stick
+                            # Patrick's Stuff
+                            else:
+                                for w in self._waiters:
+                                    if len(w) == 2:  # m has msg and callback
+                                        if msg.type == w[0].reply_type:
+                                            self._onSuccess(w[1](msg))
+                                            self._waiters.remove(w)
+                                    else:
+                                        self._onSuccess(msg)
+                                        self._waiters.remove(w)
 
                         except Empty:
                             pass
@@ -116,6 +141,8 @@ class Node:
 
     def start(self, onSuccess, onFailure):
         if not self.isRunning():
+            self.onSuccess = onSuccess
+            self.onFailure = onFailure
             self._pump = Pump(self._driver, self._init, self._out, onSuccess, onFailure)
             self._pump.start()
 
@@ -142,4 +169,4 @@ class Node:
 
     def getCapabilities(self):
         self._out.put(RequestCapabilitiesMessage(), block=False)
-        pass
+        

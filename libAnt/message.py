@@ -5,7 +5,10 @@ class Message:
     def __init__(self, type: int, content: bytes):
         self._type = type
         self._content = content
-
+        self.callback = None
+        self.expect_reply = False  # Field to indicate if message expects a reply
+        self.source = ''
+        
     def __len__(self):
         return len(self._content)
 
@@ -39,6 +42,8 @@ class Message:
 class RequestMessage(Message):
     def __init__(self, content: bytes):
         super().__init__(MESSAGE_CHANNEL_REQUEST, content)
+        self.expect_reply = True
+        self.source = 'Host'
 
 
 class BroadcastMessage(Message):
@@ -88,6 +93,22 @@ class BroadcastMessage(Message):
 class SystemResetMessage(Message):
     def __init__(self):
         super().__init__(MESSAGE_SYSTEM_RESET, b'\x00') # Pcavana 2 March 2023 - Change content to b'\x00'
+        self.expect_reply = True
+        self.source = 'Host'
+        self.callback = StartMessage.reset_successful
+        self.reply_type = MESSAGE_STARTUP
+        
+    
+class StartMessage:
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_STARTUP, content)
+    def reset_successful(msg):
+        if not msg.type == MESSAGE_STARTUP:
+            return(f"Error: Unexpected Message Type {msg.type}")
+        rst_str = 'Device Startup Successful'
+        # TODO Unpack Start Message bits
+        return(rst_str)
+            
 
 
 # Add Capabilities Interrogation
@@ -95,6 +116,9 @@ class RequestCapabilitiesMessage(RequestMessage):
     def __init__(self):
         content = bytearray([0, MESSAGE_CAPABILITIES])
         super().__init__(content)
+        self.source = 'Host'
+        self.callback = CapabilitiesMessage.disp_capabilities
+        self.reply_type = MESSAGE_CAPABILITIES
 
 
 class CapabilitiesMessage(Message):
@@ -107,10 +131,15 @@ class CapabilitiesMessage(Message):
                              'adv_options4']
         for i, value in enumerate(content):
             self.capabilities_dict[capabilities_keys[i]] = value
+        self.source = 'ANT'
 
-    def disp_capabilities(self):
+    def disp_capabilities(msg):
+        if not msg.type == MESSAGE_CAPABILITIES:
+            return(f"Error: Unexpected Message Type {msg.type}")
+            
+        cap_msg = CapabilitiesMessage(msg.content)
         cap_str = "\nANT Device Capabilities:\n"
-        for key, value in self.capabilities_dict.items():
+        for key, value in cap_msg.capabilities_dict.items():
             match key:
                 # TODO: Unpack options and display appropriate settings 
                 case 'std_options':
@@ -131,7 +160,7 @@ class CapabilitiesMessage(Message):
                 case _:
                     cap_str += f'\t{key}: {value}\n'
 
-        return cap_str
+        return(cap_str)
 
 
 class SetNetworkKeyMessage(Message):
@@ -166,7 +195,7 @@ class SetChannelRfFrequencyMessage(Message):
 
 class OpenRxScanModeMessage(Message):
     def __init__(self):
-        super().__init__(OPEN_RX_SCAN_MODE, bytes([0]))
+        super().__init__(MESSAGE_OPEN_RX_SCAN_MODE, bytes([0]))
 
 
 class EnableExtendedMessagesMessage(Message):
