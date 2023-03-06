@@ -8,7 +8,7 @@ class Message:
         self.callback = None
         self.reply_type = None  # Field to indicate if message expects a reply
         self.source = ''
-        
+
     def __len__(self):
         return len(self._content)
 
@@ -39,12 +39,118 @@ class Message:
         return self._content
 
 
+# %% Config Messages
+class SetNetworkKeyMessage(Message):
+    def __init__(self, channel: int, key: bytes = ANTPLUS_NETWORK_KEY):
+        content = bytearray([channel])
+        content.extend(key)
+        super().__init__(MESSAGE_NETWORK_KEY, bytes(content))
+
+
+class AssignChannelMessage(Message):
+    def __init__(self, channel: int, type: int, network: int = 0, extended: int = None):
+        content = bytearray([channel, type, network])
+        if extended is not None:
+            content.append(extended)
+        super().__init__(MESSAGE_CHANNEL_ASSIGN, bytes(content))
+
+
+class SetChannelIdMessage(Message):
+    def __init__(self, channel: int, deviceNumber: int = 0, deviceType: int = 0, transType: int = 0):
+        content = bytearray([channel])
+        content.extend(deviceNumber.to_bytes(2, byteorder='big'))
+        content.append(deviceType)
+        content.append(transType)
+        super().__init__(MESSAGE_CHANNEL_ID, bytes(content))
+
+
+class SetChannelRfFrequencyMessage(Message):
+    def __init__(self, channel: int, frequency: int = 2457):
+        content = bytes([channel, frequency - 2400])
+        super().__init__(MESSAGE_CHANNEL_FREQUENCY, content)
+
+
+class EnableExtendedMessagesMessage(Message):
+    def __init__(self, enable: bool = True):
+        content = bytes([0, int(enable)])
+        super().__init__(MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
+
+
+class LibConfigMessage(Message):
+    def __init__(self, rxTimestamp: bool = True, rssi: bool = True, channelId: bool = True):
+        config = 0
+        if rxTimestamp:
+            config |= EXT_FLAG_TIMESTAMP
+        if rssi:
+            config |= EXT_FLAG_RSSI
+        if channelId:
+            config |= EXT_FLAG_CHANNEL_ID
+        super().__init__(MESSAGE_LIB_CONFIG, bytes([0, config]))
+
+
+# %% Control Messages
+class SystemResetMessage(Message):
+    def __init__(self):
+        super().__init__(MESSAGE_SYSTEM_RESET, b'\x00') # Pcavana 2 March 2023 - Change content to b'\x00'
+        self.expect_reply = True
+        self.source = 'Host'
+        self.callback = StartUpMessage.disp_startup
+        self.reply_type = MESSAGE_STARTUP
+
+
+class OpenRxScanModeMessage(Message):
+    def __init__(self):
+        super().__init__(MESSAGE_OPEN_RX_SCAN_MODE, bytes([0]))
+
+
+# %%% Request Messages
 class RequestMessage(Message):
     def __init__(self, content: bytes):
         super().__init__(MESSAGE_CHANNEL_REQUEST, content)
         self.expect_reply = True
         self.source = 'Host'
 
+
+class RequestCapabilitiesMessage(RequestMessage):
+    def __init__(self):
+        content = bytearray([0, MESSAGE_CAPABILITIES])
+        super().__init__(content)
+        self.source = 'Host'
+        self.callback = CapabilitiesMessage.disp_capabilities
+        self.reply_type = MESSAGE_CAPABILITIES
+
+
+class RequestChannelStatusMessage(RequestMessage):
+    def __init__(self, channel_num: int):
+        content = bytearray([channel_num, MESSAGE_CHANNEL_STATUS])
+        super().__init__(content)
+        self.source = 'Host'
+        # TODO: Channel Status Message Class and callback
+        self.callback = ChannelStatusMessage.disp_status
+        self.reply_type = MESSAGE_CHANNEL_STATUS
+
+
+class RequestChannelIDMessage(RequestMessage):
+    def __init__(self, channel_num: int):
+        content = bytearray([channel_num, MESSAGE_CHANNEL_ID])
+        super().__init__(content)
+        self.source = 'Host'
+        # TODO: Channel ID Message Class and callback
+        self.callback = ChannelIDMessage.disp_ID
+        self.reply_type = MESSAGE_CHANNEL_ID
+
+
+class RequestSerialNumberMessage(RequestMessage):
+    def __init__(self, channel_num: int):
+        content = bytearray([0, MESSAGE_SERIAL_NUMBER])
+        super().__init__(content)
+        self.source = 'Host'
+        # TODO: Serial Number Message Class and callback
+        self.callback = SerialNumberMessage.disp_SN
+        self.reply_type = MESSAGE_SERIAL_NUMBER
+
+
+# %% Data Messages
 
 class BroadcastMessage(Message):
     def __init__(self, type: int, content: bytes):
@@ -90,20 +196,12 @@ class BroadcastMessage(Message):
         pass
 
 
-class SystemResetMessage(Message):
-    def __init__(self):
-        super().__init__(MESSAGE_SYSTEM_RESET, b'\x00') # Pcavana 2 March 2023 - Change content to b'\x00'
-        self.expect_reply = True
-        self.source = 'Host'
-        self.callback = StartMessage.reset_successful
-        self.reply_type = MESSAGE_STARTUP
-
-
-class StartMessage:
+# %% Notification Messages
+class StartUpMessage:
     def __init__(self, content: bytes):
         super().__init__(MESSAGE_STARTUP, content)
 
-    def reset_successful(msg):
+    def disp_startup(msg):
         if not msg.type == MESSAGE_STARTUP:
             return(f"Error: Unexpected Message Type {msg.type}")
         start_bits = bit_array(msg.content[0])
@@ -121,16 +219,30 @@ class StartMessage:
         return(start_str[0:-1])
 
 
-# Add Capabilities Interrogation
-class RequestCapabilitiesMessage(RequestMessage):
-    def __init__(self):
-        content = bytearray([0, MESSAGE_CAPABILITIES])
-        super().__init__(content)
-        self.source = 'Host'
-        self.callback = CapabilitiesMessage.disp_capabilities
-        self.reply_type = MESSAGE_CAPABILITIES
+class SerialErrorMessage:
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_SERIAL_ERROR, content)
+
+# TODO: Unpack Serial Error Message
+    def disp_serial_error(msg):
+        if not msg.type == MESSAGE_SERIAL_ERROR:
+            return(f"Error: Unexpected Message Type {msg.type}")
+        start_bits = bit_array(msg.content[0])
+        start_str = 'Device Startup Successful. Reset type:\n'
+        if start_bits[0]:
+            start_str += '\tHARDWARE_RESET_LINE\n'
+        if start_bits[1]:
+            start_str += '\tWATCH_DOG_RESET\n'
+        if start_bits[5]:
+            start_str += '\tCOMMAND_RESET\n'
+        if start_bits[6]:
+            start_str += '\tSYNCHRONOUS_RESET\n'
+        if start_bits[7]:
+            start_str += '\tSUSPEND_RESET\n'
+        return(start_str[0:-1])
 
 
+# %% Requested Response Messages
 class CapabilitiesMessage(Message):
     def __init__(self, content: bytes):
         super().__init__(MESSAGE_CAPABILITIES, content)
@@ -201,57 +313,49 @@ class CapabilitiesMessage(Message):
         return(cap_str)
 
 
-class SetNetworkKeyMessage(Message):
-    def __init__(self, channel: int, key: bytes = ANTPLUS_NETWORK_KEY):
-        content = bytearray([channel])
-        content.extend(key)
-        super().__init__(MESSAGE_NETWORK_KEY, bytes(content))
+class ChannelStatusMessage(Message):
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_CAPABILITIES, content)
+        self.capabilities_dict = {}
+        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
+                             'adv_options', 'adv_options2',
+                             'max_sensRcore_channels', 'adv_options3',
+                             'adv_options4']
+        for i, value in enumerate(content):
+            if 'options' in capabilities_keys[i]:
+                value = bit_array(value)
+            self.capabilities_dict[capabilities_keys[i]] = value
+        self.source = 'ANT'
 
 
-class AssignChannelMessage(Message):
-    def __init__(self, channel: int, type: int, network: int = 0, extended: int = None):
-        content = bytearray([channel, type, network])
-        if extended is not None:
-            content.append(extended)
-        super().__init__(MESSAGE_CHANNEL_ASSIGN, bytes(content))
+class ChannelIDMessage(Message):
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_CAPABILITIES, content)
+        self.capabilities_dict = {}
+        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
+                             'adv_options', 'adv_options2',
+                             'max_sensRcore_channels', 'adv_options3',
+                             'adv_options4']
+        for i, value in enumerate(content):
+            if 'options' in capabilities_keys[i]:
+                value = bit_array(value)
+            self.capabilities_dict[capabilities_keys[i]] = value
+        self.source = 'ANT'
 
 
-class SetChannelIdMessage(Message):
-    def __init__(self, channel: int, deviceNumber: int = 0, deviceType: int = 0, transType: int = 0):
-        content = bytearray([channel])
-        content.extend(deviceNumber.to_bytes(2, byteorder='big'))
-        content.append(deviceType)
-        content.append(transType)
-        super().__init__(MESSAGE_CHANNEL_ID, bytes(content))
-
-
-class SetChannelRfFrequencyMessage(Message):
-    def __init__(self, channel: int, frequency: int = 2457):
-        content = bytes([channel, frequency - 2400])
-        super().__init__(MESSAGE_CHANNEL_FREQUENCY, content)
-
-
-class OpenRxScanModeMessage(Message):
-    def __init__(self):
-        super().__init__(MESSAGE_OPEN_RX_SCAN_MODE, bytes([0]))
-
-
-class EnableExtendedMessagesMessage(Message):
-    def __init__(self, enable: bool = True):
-        content = bytes([0, int(enable)])
-        super().__init__(MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
-
-
-class LibConfigMessage(Message):
-    def __init__(self, rxTimestamp: bool = True, rssi: bool = True, channelId: bool = True):
-        config = 0
-        if rxTimestamp:
-            config |= EXT_FLAG_TIMESTAMP
-        if rssi:
-            config |= EXT_FLAG_RSSI
-        if channelId:
-            config |= EXT_FLAG_CHANNEL_ID
-        super().__init__(MESSAGE_LIB_CONFIG, bytes([0, config]))
+class SerialNumberMessage(Message):
+    def __init__(self, content: bytes):
+        super().__init__(MESSAGE_CAPABILITIES, content)
+        self.capabilities_dict = {}
+        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
+                             'adv_options', 'adv_options2',
+                             'max_sensRcore_channels', 'adv_options3',
+                             'adv_options4']
+        for i, value in enumerate(content):
+            if 'options' in capabilities_keys[i]:
+                value = bit_array(value)
+            self.capabilities_dict[capabilities_keys[i]] = value
+        self.source = 'ANT'
 
 
 def bit_array(byte):
