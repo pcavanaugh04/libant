@@ -21,7 +21,7 @@ def eCallback(e):
 # For USB driver
 # USBm sticks have pid=0x1009
 # USB2 sticks have pid=0x1008
-n = Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode')
+n = Node(USBDriver(vid=0x0FCF, pid=0x1009), 'MyNode')
 
 n.start(callback, eCallback)
 n.getCapabilities()

@@ -6,7 +6,7 @@ class Message:
         self._type = type
         self._content = content
         self.callback = None
-        self.expect_reply = False  # Field to indicate if message expects a reply
+        self.reply_type = None  # Field to indicate if message expects a reply
         self.source = ''
         
     def __len__(self):
@@ -130,33 +130,61 @@ class CapabilitiesMessage(Message):
                              'max_sensRcore_channels', 'adv_options3',
                              'adv_options4']
         for i, value in enumerate(content):
+            if 'options' in capabilities_keys[i]:
+                value = bit_array(value)
             self.capabilities_dict[capabilities_keys[i]] = value
         self.source = 'ANT'
 
     def disp_capabilities(msg):
         if not msg.type == MESSAGE_CAPABILITIES:
             return(f"Error: Unexpected Message Type {msg.type}")
-            
+
         cap_msg = CapabilitiesMessage(msg.content)
         cap_str = "\nANT Device Capabilities:\n"
         for key, value in cap_msg.capabilities_dict.items():
             match key:
-                # TODO: Unpack options and display appropriate settings 
                 case 'std_options':
-                    cap_str += f'\t{key}: {value}\n'
-                    continue
+                    cap_str += (f'\t{key}:\n'
+                                f'\t\tCAPABILITIES_NO_RECEIVE_CHANNELS: {bool(value[0])}\n'
+                                f'\t\tCAPABILITIES_NO_TRANSMIT_CHANNELS: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_NO_RECEIVE_MESSAGES: {bool(value[2])}\n'
+                                f'\t\tCAPABILITIES_NO_TRANSMIT_MESSAGES: {bool(value[3])}\n'
+                                f'\t\tCAPABILITIES_NO_ACKD_MESSAGES: {bool(value[4])}\n'
+                                f'\t\tCAPABILITIES_NO_BURST_MESSAGES: {bool(value[5])}\n')
+
                 case 'adv_options':
-                    cap_str += f'\t{key}: {value}\n'
-                    continue
+                    cap_str += (f'\t{key}:\n'
+                                f'\t\tCAPABILITIES_NETWORK_ENABLED: {bool(value[1])}\n'
+                                f'\t\tCAPABILITIES_SERIAL_NUMBER_ENABLED: {bool(value[3])}\n' 
+                                f'\t\tCAPABILITIES_PER_CHANNEL_TX_POWER_ENABLED: {bool(value[4])}\n'
+                                f'\t\tCAPABILITIES_LOW_PRIORITY_SEARCH_ENABLED: {bool(value[5])}\n'
+                                f'\t\tCAPABILITIES_SCRIPT_ENABLED: {bool(value[6])}\n'
+                                f'\t\tCAPABILITIES_SEARCH_LIST_ENABLED: {bool(value[7])}\n')
+
                 case 'adv_options2':
-                    cap_str += f'\t{key}: {value}\n'
-                    continue
+                    cap_str += (f'\t{key}:\n'
+                                f'\t\tCAPABILITIES_LED_ENABLED: {bool(value[0])}\n'
+                                f'\t\tCAPABILITIES_EXT_MESSAGE_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_SCAN_MODE_ENABLED: {bool(value[2])}\n'
+                                f'\t\tCAPABILITIES_PROX_SEARCH_ENABLED: {bool(value[4])}\n'
+                                f'\t\tCAPABILITIES_EXT_ASSIGN_ENABLED: {bool(value[5])}\n'
+                                f'\t\tCAPABILITIES_FS_ANT_FS_ENABLED: {bool(value[6])}\n'
+                                f'\t\tCAPABILITIES_FIT1_ENABLED: {bool(value[7])}\n')
+
                 case 'adv_options3':
-                    cap_str += f'\t{key}: {value}\n'
-                    continue
+                    cap_str += (f'\t{key}:\n'
+                                f'\t\tCAPABILITIES_ADVANCED_BURST_ENABLED: {bool(value[0])}\n'
+                                f'\t\tCAPABILITIES_EVENT_BUFFERING_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_EVENT_FILTERING_ENABLED: {bool(value[2])}\n'
+                                f'\t\tCAPABILITIES_HIGH_DUTY_SEARCH_ENABLED: {bool(value[3])}\n'
+                                f'\t\tCAPABILITIES_SEARCH_SHARING_ENABLED: {bool(value[4])}\n'
+                                f'\t\tCAPABILITIES_SELECTIVE_DATA_UPDATES_ENABLED: {bool(value[6])}\n'
+                                f'\t\tCAPABILITIES_ENCRYPTED_CHANNEL_ENABLED: {bool(value[7])}\n')
+
                 case 'adv_options4':
-                    cap_str += f'\t{key}: {value}\n'
-                    continue
+                    cap_str += (f'\t{key}:\n'
+                                f'\t\tCAPABILITIES_RFACTIVE_NOTIFICATION_ENABLED: {bool(value[0])}\n')
+
                 case _:
                     cap_str += f'\t{key}: {value}\n'
 
@@ -214,3 +242,31 @@ class LibConfigMessage(Message):
         if channelId:
             config |= EXT_FLAG_CHANNEL_ID
         super().__init__(MESSAGE_LIB_CONFIG, bytes([0, config]))
+
+
+def bit_array(byte):
+    """Convert single byte to array of 8 bits
+
+    Parameters
+    ----------
+    byte : bytes
+        Byte to be converted to bits.
+
+    Returns
+    -------
+    bits : list
+        8 element list corresponding to input byte in binary
+    """
+    if byte < 0 or byte > 255:
+        return (["Error: Input cannot exceed 1 byte"])
+    byte_int = int(byte)
+    remaining = byte_int
+    bits = []
+    # msb = int(byte_int / 128)
+    for i in range(0, 8):
+        exp_2 = 2**(7-i)
+        current_bit = int(remaining/exp_2)
+        bits.insert(0, current_bit)
+        remaining %= exp_2
+
+    return bits
