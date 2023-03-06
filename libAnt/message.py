@@ -97,18 +97,28 @@ class SystemResetMessage(Message):
         self.source = 'Host'
         self.callback = StartMessage.reset_successful
         self.reply_type = MESSAGE_STARTUP
-        
-    
+
+
 class StartMessage:
     def __init__(self, content: bytes):
         super().__init__(MESSAGE_STARTUP, content)
+
     def reset_successful(msg):
         if not msg.type == MESSAGE_STARTUP:
             return(f"Error: Unexpected Message Type {msg.type}")
-        rst_str = 'Device Startup Successful'
-        # TODO Unpack Start Message bits
-        return(rst_str)
-            
+        start_bits = bit_array(msg.content[0])
+        start_str = 'Device Startup Successful. Reset type:\n'
+        if start_bits[0]:
+            start_str += '\tHARDWARE_RESET_LINE\n'
+        if start_bits[1]:
+            start_str += '\tWATCH_DOG_RESET\n'
+        if start_bits[5]:
+            start_str += '\tCOMMAND_RESET\n'
+        if start_bits[6]:
+            start_str += '\tSYNCHRONOUS_RESET\n'
+        if start_bits[7]:
+            start_str += '\tSUSPEND_RESET\n'
+        return(start_str[0:-1])
 
 
 # Add Capabilities Interrogation
