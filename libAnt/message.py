@@ -139,11 +139,10 @@ class RequestChannelIDMessage(RequestMessage):
 
 
 class RequestSerialNumberMessage(RequestMessage):
-    def __init__(self, channel_num: int):
+    def __init__(self):
         content = bytearray([0, MESSAGE_SERIAL_NUMBER])
         super().__init__(content)
         self.source = 'Host'
-        # TODO: Serial Number Message Class and callback
         self.callback = SerialNumberMessage.disp_SN
         self.reply_type = MESSAGE_SERIAL_NUMBER
 
@@ -406,17 +405,22 @@ class ChannelIDMessage(Message):
 
 class SerialNumberMessage(Message):
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CAPABILITIES, content)
-        self.capabilities_dict = {}
-        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
-                             'adv_options', 'adv_options2',
-                             'max_sensRcore_channels', 'adv_options3',
-                             'adv_options4']
-        for i, value in enumerate(content):
-            if 'options' in capabilities_keys[i]:
-                value = bit_array(value)
-            self.capabilities_dict[capabilities_keys[i]] = value
+        super().__init__(MESSAGE_SERIAL_NUMBER, content)
+        x = b''
+        for i in content:
+            x += i.to_bytes(1, 'little')
+        self.serial_number = int.from_bytes(x, byteorder='little')
         self.source = 'ANT'
+
+    def disp_SN(msg):
+        if not msg.type == MESSAGE_SERIAL_NUMBER:
+            return(f"Error: Unexpected Message Type {msg.type}")
+
+        SN_msg = SerialNumberMessage(msg.content)
+        sn_str = "\nANT Device Serial Number:\n"
+        sn_str += f"\tSerial Number: {SN_msg.serial_number}\n"
+
+        return sn_str
 
 
 def bit_array(byte):

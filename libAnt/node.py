@@ -65,7 +65,7 @@ class Pump(threading.Thread):
                         try:
                             outMsg = self._out.get(block=False)
                             d.write(outMsg)
-                            print(f'Message Sent: {outMsg}')
+                            # print(f'Message Sent: {outMsg}')
 
                         except Empty:
                             pass
@@ -82,7 +82,7 @@ class Pump(threading.Thread):
                         try:
                             msg = d.read(timeout=1)
                             # Diagnostic Print Statement to view incoming message
-                            print(f'Message Recieved: {msg}')
+                            # print(f'Message Recieved: {msg}')
                             # print(f'Message Type: {msg.type}')
 
                             # TODO: build a library of the expected resonses associated with each control function
@@ -178,3 +178,6 @@ class Node:
 
     def getChannelID(self, channel_num: int):
         self._out.put(RequestChannelIDMessage(channel_num), block=False)
+
+    def getANTSerialNumber(self):
+        self._out.put(RequestSerialNumberMessage(), block=False)

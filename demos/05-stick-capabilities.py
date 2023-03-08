@@ -25,5 +25,6 @@ n = Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode')
 
 n.start(callback, eCallback)
 n.getCapabilities()
+n.getANTSerialNumber()
 sleep(1)  # Listen for 3sec
 n.stop()
