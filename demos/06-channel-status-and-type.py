@@ -24,6 +24,8 @@ def eCallback(e):
 n = Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode')
 
 n.start(callback, eCallback)
-n.getCapabilities()
+channel_num = 0
+n.getChannelStatus(channel_num)
+n.getChannelID(channel_num)
 sleep(1)  # Listen for 3sec
 n.stop()

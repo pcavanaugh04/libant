@@ -125,7 +125,6 @@ class RequestChannelStatusMessage(RequestMessage):
         content = bytearray([channel_num, MESSAGE_CHANNEL_STATUS])
         super().__init__(content)
         self.source = 'Host'
-        # TODO: Channel Status Message Class and callback
         self.callback = ChannelStatusMessage.disp_status
         self.reply_type = MESSAGE_CHANNEL_STATUS
 
@@ -135,7 +134,6 @@ class RequestChannelIDMessage(RequestMessage):
         content = bytearray([channel_num, MESSAGE_CHANNEL_ID])
         super().__init__(content)
         self.source = 'Host'
-        # TODO: Channel ID Message Class and callback
         self.callback = ChannelIDMessage.disp_ID
         self.reply_type = MESSAGE_CHANNEL_ID
 
@@ -314,33 +312,96 @@ class CapabilitiesMessage(Message):
 
 
 class ChannelStatusMessage(Message):
+    """ANT Protocol Section 9.5.7.1."""
+
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CAPABILITIES, content)
-        self.capabilities_dict = {}
-        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
-                             'adv_options', 'adv_options2',
-                             'max_sensRcore_channels', 'adv_options3',
-                             'adv_options4']
-        for i, value in enumerate(content):
-            if 'options' in capabilities_keys[i]:
-                value = bit_array(value)
-            self.capabilities_dict[capabilities_keys[i]] = value
+        super().__init__(MESSAGE_CHANNEL_STATUS, content)
+        self.channel_num = int(content[0])
+        channel_status = bit_array(content[1])
+        match bits_2_num(channel_status[6:8]):
+            case 0:
+                self.channel_state = 'Un-Assigned'
+            case 1:
+                self.channel_state = 'Assigned'
+            case 2:
+                self.channel_state = 'Searching'
+            case 3:
+                self.channel_state = 'Tracking'
+        self.network_number = bits_2_num(channel_status[4:6])
+        self.channel_type = bits_2_num(channel_status[0:4])
         self.source = 'ANT'
+
+    def disp_status(msg):
+        if not msg.type == MESSAGE_CHANNEL_STATUS:
+            return(f"Error: Unexpected Message Type {msg.type}")
+
+        status_msg = ChannelStatusMessage(msg.content)
+        status_str = "\nChannel Status:\n"
+        status_str += f"\tChannel Number: {status_msg.channel_num}\n"
+        # Channel Type ANT Protocol Table 5-1
+        match status_msg.channel_type:
+            case 0x00:
+                status_str += "\tChannel Type: Bidirectional Slave Channel\n"
+            case 0x10:
+                status_str += "\tChannel Type: Bidirectional Master Channel\n"
+            case 0x20:
+                status_str += "\tChannel Type: Shared Bidirectional Master Channel\n"
+            case 0x30:
+                status_str += "\tChannel Type: Shared Bidirectional Master Channel\n"
+            case 0x40:
+                status_str += "\tChannel Type: Slave Recieve Only Channel\n"
+            case 0x50:
+                status_str += "\tChannel Type: Master Recieve Only Channel\n"
+
+        # Network Number ANT Protocol Section 5.2.5.1
+        status_str += f"\tNetwork Number: {status_msg.network_number}\n"
+        # Channel State
+        status_str += f"\tChannel State: {status_msg.channel_state}\n"
+
+        return status_str
 
 
 class ChannelIDMessage(Message):
+    """ANT Protocol Section 9.5.7.2."""
+    # TODO: Implement Extended Device number field in Tx Type
+
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CAPABILITIES, content)
-        self.capabilities_dict = {}
-        capabilities_keys = ['max_channels', 'max_networks', 'std_options',
-                             'adv_options', 'adv_options2',
-                             'max_sensRcore_channels', 'adv_options3',
-                             'adv_options4']
-        for i, value in enumerate(content):
-            if 'options' in capabilities_keys[i]:
-                value = bit_array(value)
-            self.capabilities_dict[capabilities_keys[i]] = value
-        self.source = 'ANT'
+        super().__init__(MESSAGE_CHANNEL_ID, content)
+        self.channel_num = int(content[0])
+        self.device_number = int.from_bytes((content[1].to_bytes(1, 'little') +
+                                            content[2].to_bytes(1, 'little')),
+                                            byteorder='little')
+        self.device_type = int(content[3])
+        self.tx_type = bit_array(content[4])
+
+    def disp_ID(msg):
+        if not msg.type == MESSAGE_CHANNEL_ID:
+            return(f"Error: Unexpected Message Type {msg.type}")
+
+        id_msg = ChannelIDMessage(msg.content)
+        id_str = "\nChannel ID:\n"
+        id_str += f"\tChannel Number: {id_msg.channel_num}\n"
+        id_str += f"\tDevice Number: {id_msg.device_number}\n"
+        id_str += f"\tDevice Type: {id_msg.device_type}\n"
+
+        # Channel Type ANT Protocol Table 5-2
+        match bits_2_num(id_msg.tx_type[6:8]):
+            case 0:
+                pass
+            case 1:
+                id_str += "\tTransmission Type: Independent Channel\n"
+            case 2:
+                id_str += "\tTransmission Type: Shared Channel using 1 byte address\n"
+            case 3:
+                id_str += "\tTransmission Type: Shared Channel using 2 byte address\n"
+
+        match id_msg.tx_type[5]:
+            case 0:
+                id_str += "\tUses Global Data Pages: False\n"
+            case 1:
+                id_str += "\tUses Global Data Pages: True\n"
+
+        return id_str
 
 
 class SerialNumberMessage(Message):
@@ -371,16 +432,29 @@ def bit_array(byte):
     bits : list
         8 element list corresponding to input byte in binary
     """
+    byte = int(byte)
     if byte < 0 or byte > 255:
         return (["Error: Input cannot exceed 1 byte"])
-    byte_int = int(byte)
-    remaining = byte_int
-    bits = []
-    # msb = int(byte_int / 128)
-    for i in range(0, 8):
-        exp_2 = 2**(7-i)
-        current_bit = int(remaining/exp_2)
-        bits.insert(0, current_bit)
-        remaining %= exp_2
+
+    bits = [(byte >> i) & 1 for i in range(8)]
 
     return bits
+
+
+def bits_2_num(bit_array):
+    """Converts any number of bits in list form to integer
+
+    Parameters
+    ----------
+    bit_array : list
+        list of 1s and 0s to be sliced and converted to int
+
+    Returns
+    -------
+    int_value : int
+        corresponding value as integer
+    """
+    bit_string = ''.join(str(bit) for bit in bit_array)
+    int_value = int(bit_string, 2)
+
+    return int_value

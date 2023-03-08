@@ -4,6 +4,7 @@ from time import sleep
 
 from libAnt.drivers.driver import Driver
 from libAnt.message import *
+import traceback
 
 
 class Network:
@@ -64,6 +65,7 @@ class Pump(threading.Thread):
                         try:
                             outMsg = self._out.get(block=False)
                             d.write(outMsg)
+                            print(f'Message Sent: {outMsg}')
 
                         except Empty:
                             pass
@@ -80,7 +82,7 @@ class Pump(threading.Thread):
                         try:
                             msg = d.read(timeout=1)
                             # Diagnostic Print Statement to view incoming message
-                            # print(f'Message Recieved: {msg}')
+                            print(f'Message Recieved: {msg}')
                             # print(f'Message Type: {msg.type}')
 
                             # TODO: build a library of the expected resonses associated with each control function
@@ -117,6 +119,7 @@ class Pump(threading.Thread):
                         except Empty:
                             pass
             except Exception as e:
+                traceback.print_exc()
                 self._onFailure(e)
             except:
                 pass
@@ -169,4 +172,9 @@ class Node:
 
     def getCapabilities(self):
         self._out.put(RequestCapabilitiesMessage(), block=False)
-        
+
+    def getChannelStatus(self, channel_num: int):
+        self._out.put(RequestChannelStatusMessage(channel_num), block=False)
+
+    def getChannelID(self, channel_num: int):
+        self._out.put(RequestChannelIDMessage(channel_num), block=False)
