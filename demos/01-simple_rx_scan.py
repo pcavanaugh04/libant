@@ -13,11 +13,9 @@ def callback(msg):
 def eCallback(e):
     print(e)
 
-# for USB driver
-# with Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode') as n:
 
-# for serial driver
-with Node(SerialDriver("/dev/ttyUSB0"), 'MyNode') as n:
+# for USB driver
+with Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode') as n:
     n.enableRxScanMode()
     n.start(callback, eCallback)
-    sleep(3)  # Listen for 30sec
+    sleep(30)  # Listen for 30sec

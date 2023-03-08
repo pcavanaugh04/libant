@@ -45,6 +45,20 @@ class SetNetworkKeyMessage(Message):
         content = bytearray([channel])
         content.extend(key)
         super().__init__(MESSAGE_NETWORK_KEY, bytes(content))
+        self.key = key
+        self.reply_type = MESSAGE_CHANNEL_EVENT
+        self.callback = SetNetworkKeyMessage.network_success
+
+
+    def network_success(msg):
+        if not msg.type == MESSAGE_CHANNEL_EVENT:
+            return(f"Error: Unexpected Message Type {msg.type}")
+        if not msg.content[1] == MESSAGE_NETWORK_KEY:
+            return
+        if msg.content[2] == 0:
+            return(f'Network Key Set to: {ANTPLUS_NETWORK_KEY}')
+        # else:
+        #     return(process_error_code(msg.content[2]))
 
 
 class AssignChannelMessage(Message):

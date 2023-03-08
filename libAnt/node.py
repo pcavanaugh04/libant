@@ -59,6 +59,7 @@ class Pump(threading.Thread):
                             self._waiters.append((m, m.callback))
                         else:
                             self._waiters.append((m))
+                        self._out.put(m)
 
                     while not self.stopped():
                         #  Write
@@ -72,11 +73,12 @@ class Pump(threading.Thread):
 
                         except Exception as e:
                             print(e)
-
-                        if hasattr(outMsg, 'reply_type'):
-                            self._waiters.append((outMsg, outMsg.callback))
+                            
                         else:
-                            self._waiters.append((outMsg))
+                            if hasattr(outMsg, 'reply_type'):
+                                self._waiters.append((outMsg, outMsg.callback))
+                            else:
+                                self._waiters.append((outMsg))
 
                         # Read
                         try:
@@ -89,16 +91,15 @@ class Pump(threading.Thread):
 
                             # print(f'Waiter msg: {w[0]}')
                             # print(f'Waiter msg type: {w[0].type}')
-                            # print(f'Reply Expected?: {w[0].expect_reply}')
 
                             if msg.type == MESSAGE_CHANNEL_EVENT:
                                 # This is a response to our outgoing message
                                 for w in self._waiters:
-                                    if w[0].type == msg.content[1]:  # ACK
+                                    if w[0].type == msg.content[1]: # ACK
                                         if w[1] is not None:
-                                            w[1]()
+                                            self._onSuccess(w[1](msg))
+
                                         self._waiters.remove(w)
-                                        # TODO: Call waiter callback from tuple (waiter, callback)
                                         break
                             elif msg.type == MESSAGE_CHANNEL_BROADCAST_DATA:
                                 bmsg = BroadcastMessage(msg.type, msg.content).build(msg.content)
@@ -181,3 +182,6 @@ class Node:
 
     def getANTSerialNumber(self):
         self._out.put(RequestSerialNumberMessage(), block=False)
+
+# TODO: Make Channel Class as attribute of node
+# class Channel:
