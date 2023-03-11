@@ -1,34 +1,101 @@
-from libAnt.constants import *
+import libAnt.constants as c
 
 
 class Message:
+    """Parent class of general ANT Message format object.
+
+    Object to represent an ANT message in a format that can be sent via serial
+    to an ANT device and communicate with other ANT devices. Messages consist
+    of a sync byte, length byte, channel byte, message content and a checksum
+    consistent with ANT Section 7.1. Class has custom attributes to return
+    useful information about a message in readable format such as length and
+    display functions.
+    """
+
     def __init__(self, type: int, content: bytes):
-        self._type = type
-        self._content = content
-        self.callback = None
+        self._type = type  # Message type indicated in constants file
+        self._content = content  # Byte array of Message content
+        self.callback = self.device_reply  # Function called on message success
         self.reply_type = None  # Field to indicate if message expects a reply
-        self.source = ''
+        self.source = ''  # Descriptive field to know where message comes from
 
     def __len__(self):
+        "Length property updated to only show length of content attribute"
         return len(self._content)
 
     def __iter__(self):
+        "Iterating message object only examines values in content attribute"
         return self._content
 
     def __str__(self):
-        return '({:02X}): '.format(self._type) + ' '.join('{:02X}'.format(x) for x in self._content)
+        """
+        Printing or casting object to string generates hex value of message
+        type and lists hex values of content attribute.
+
+        Returns
+        -------
+        str
+            Formatted message containing message type and content.
+
+        """
+        return ('({:02X}): '.format(self._type) +
+                ' '.join('{:02X}'.format(x) for x in self._content))
 
     def checksum(self) -> int:
-        chk = MESSAGE_TX_SYNC ^ len(self) ^ self._type
+        """Create checksum byte to ensure message is recieved properly.
+
+        Checksum is produced from XOR operation of all bytes in the message.
+        """
+        chk = c.MESSAGE_TX_SYNC ^ len(self) ^ self._type
         for b in self._content:
             chk ^= b
         return chk
 
     def encode(self) -> bytes:
-        b = bytearray([MESSAGE_TX_SYNC, len(self), self._type])
+        """
+        Encode message into standard ANT message format consisting of:
+        Sync byte
+        Length byte
+        Message Type byte
+        Content byte array (Channel number will be first byte of this array)
+        Checksum byte
+
+        Returns
+        -------
+        bytes
+            Formatted byte object ready to sent to ANT device over serial.
+
+        """
+        b = bytearray([c.MESSAGE_TX_SYNC, len(self), self._type])
         b.extend(self._content)
         b.append(self.checksum())
         return bytes(b)
+
+    def device_reply(msg, msg_type):
+        """
+        Callback to check status of a set network key message request
+
+        Parameters
+        ----------
+        msg : Message
+            Event message from ANT device containing status of request.
+
+        Returns
+        -------
+        str
+            Confirmation or Error message based on ANT reply.
+
+        """
+        if msg.type == c.MESSAGE_SERIAL_ERROR:
+            return(SerialErrorMessage.disp_serial_error(msg))
+        if not msg.type == c.MESSAGE_CHANNEL_EVENT:
+            return(f"Error: Unexpected Message Type {msg.type}")
+        if not msg.content[1] == msg_type:
+            return((f"Error: Unexpected Message Type {msg.type}"))
+        if msg.content[2] == 0:
+            return(f'Message Success. Type: {type}')
+        # else:
+        #     return(process_error_code(msg.content[2]))
 
     @property
     def type(self) -> int:
@@ -41,124 +108,387 @@ class Message:
 
 # %% Config Messages
 class SetNetworkKeyMessage(Message):
-    def __init__(self, channel: int, key: bytes = ANTPLUS_NETWORK_KEY):
-        content = bytearray([channel])
+    """ANT Section 9.5.2.7 (0x46)
+
+    Message to assign the network key to a network number on an ANT device.
+    Networks allow for multiple connections and sharing information between
+    nodes. Nodes can only connect to other nodes with the same network key.
+    The default public network is set to 0, but example private networks such
+    as ANT+ devices have their own network key. Hardware is typically limited
+    in the number of networks they can store as assignments.
+    """
+
+    def __init__(self, network_number: int,
+                 key: bytes = c.ANTPLUS_NETWORK_KEY):
+        content = bytearray([network_number])
         content.extend(key)
-        super().__init__(MESSAGE_NETWORK_KEY, bytes(content))
+        super().__init__(c.MESSAGE_NETWORK_KEY, bytes(content))
         self.key = key
-        self.reply_type = MESSAGE_CHANNEL_EVENT
-        self.callback = SetNetworkKeyMessage.network_success
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.callback = self.network_success
+        self.source = 'Host'
 
+    def device_reply(msg: Message):
+        """
+        Callback to check status of a set network key message request
 
-    def network_success(msg):
-        if not msg.type == MESSAGE_CHANNEL_EVENT:
+        Parameters
+        ----------
+        msg : Message
+            Event message from ANT device containing status of request.
+
+        Returns
+        -------
+        str
+            Confirmation or Error message based on ANT reply.
+
+        """
+        if not msg.type == c.MESSAGE_CHANNEL_EVENT:
             return(f"Error: Unexpected Message Type {msg.type}")
-        if not msg.content[1] == MESSAGE_NETWORK_KEY:
-            return
+        if not msg.content[1] == c.MESSAGE_NETWORK_KEY:
+            return((f"Error: Unexpected Message Type {msg.type}"))
         if msg.content[2] == 0:
-            return(f'Network Key Set to: {ANTPLUS_NETWORK_KEY}')
+            return('Successfully Set Network Key')
         # else:
         #     return(process_error_code(msg.content[2]))
 
 
+class UnassignChannelMessage(Message):
+    """ANT Section 9.5.2.1 (0x41)
+
+    Message to unassign a channel on an ANT device. Channels must be unassigned
+    and reconfigured to be used again.
+    """
+
+    def __init__(self, channel: int):
+        content = bytearray([channel])
+        super().__init__(c.MESSAGE_CHANNEL_UNASSIGN, bytes(content))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        # self.callback = self.device_reply
+        self.source = 'Host'
+
+    # def device_reply(msg):
+    #     """
+    #     Callback to check status of a set network key message request
+
+    #     Parameters
+    #     ----------
+    #     msg : Message
+    #         Event message from ANT device containing status of request.
+
+    #     Returns
+    #     -------
+    #     str
+    #         Confirmation or Error message based on ANT reply.
+
+    #     """
+    #     if not msg.type == c.MESSAGE_CHANNEL_EVENT:
+    #         return(f"Error: Unexpected Message Type {msg.type}")
+    #     if not msg.content[1] == c.MESSAGE_NETWORK_KEY:
+    #         return((f"Error: Unexpected Message Type {msg.type}"))
+    #     if msg.content[2] == 0:
+    #         return('Successfully Set Network Key')
+
+
 class AssignChannelMessage(Message):
-    def __init__(self, channel: int, type: int, network: int = 0, extended: int = None):
+    """ANT Section 9.5.2.2 (0x42)
+
+    Message to reserve a channel number on an ANT device for communication.
+    Message specifies network number, channel type and channel number.
+    """
+
+    def __init__(self, channel: int,
+                 type: int,
+                 network: int = 0,
+                 extended: int = None):
         content = bytearray([channel, type, network])
         if extended is not None:
             content.append(extended)
-        super().__init__(MESSAGE_CHANNEL_ASSIGN, bytes(content))
+        super().__init__(c.MESSAGE_CHANNEL_ASSIGN, bytes(content))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
 
 
 class SetChannelIdMessage(Message):
-    def __init__(self, channel: int, deviceNumber: int = 0, deviceType: int = 0, transType: int = 0):
+    """ANT Section 9.5.2.3 (0x51)
+
+    Message to configure a channel based on the expected device connection.
+    """
+
+    def __init__(self, channel: int,
+                 device_number: int = 0,
+                 pairing_bit: int = 0,
+                 device_type: int = 0,
+                 tx_type: int = 0):
         content = bytearray([channel])
-        content.extend(deviceNumber.to_bytes(2, byteorder='big'))
-        content.append(deviceType)
-        content.append(transType)
-        super().__init__(MESSAGE_CHANNEL_ID, bytes(content))
+        content.extend(device_number.to_bytes(2, byteorder='little'))
+        content.append(int(pairing_bit)*128 + int(device_type))
+        content.append(tx_type)
+        super().__init__(c.MESSAGE_CHANNEL_ID, bytes(content))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
+
+
+class ChannelMessagingPeriodMessage(Message):
+    """ANT Section 9.5.2.4 (0x43)
+
+    Configure messaging period, or the data frequency, of a channel.
+    Parameters include channel number and messaging period. Messaging
+    period is set to (messaging_period_seconds)*32768
+    """
+
+    def __init__(self, channel: int, frequency: int = 4):
+        """
+        Constructor for set messaging period message.
+
+        Parameters
+        ----------
+        channel : int
+            Channel number on device being set.
+        frequency : int, optional
+            Channel messaging frequency [hz] The default value is 4hz
+
+        Returns
+        -------
+        None
+
+        """
+        content = bytes([channel])
+        content.extend((1/frequency*32768).to_bytes(2, byteorder='little'))
+        super().__init__(c.MESSAGE_CHANNEL_FREQUENCY, content)
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
+
+
+class ChannelSearchTimeoutMessage(Message):
+    """ANT Section 9.5.2.5 (0x44)
+
+    Configure search timeout for recieve message searching. Parameter sent to
+    device = time/2.5
+    """
+
+    def __init__(self, channel: int, timeout: int = 30):
+        """
+        Constructor for set messaging period message.
+
+        Parameters
+        ----------
+        channel : int
+            Channel number on device being set.
+        timeout : int, optional
+            Search timeout [s]. Value divided by 2.5 to send to device
+
+        Returns
+        -------
+        None
+
+        """
+        content = bytes([channel, timeout/2.5])
+        super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
 
 
 class SetChannelRfFrequencyMessage(Message):
+    """ANT Section 9.5.2.6 (0x54)
+
+    Message to configure RF frequency band channel will communicate with.
+    Both devices in a channel must have same RF frequency assigned
+    """
+
     def __init__(self, channel: int, frequency: int = 2457):
+        """
+        Construct RF frequency message
+
+        Parameters
+        ----------
+        channel : int
+            Channel number on device being set.
+        frequency : int, optional
+            Value of Frequency in MHz. Parameter sent to device is freq - 2400
+        Returns
+        -------
+        None
+        """
+
         content = bytes([channel, frequency - 2400])
-        super().__init__(MESSAGE_CHANNEL_FREQUENCY, content)
+        super().__init__(c.MESSAGE_CHANNEL_FREQUENCY, content)
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
 
 
 class EnableExtendedMessagesMessage(Message):
+    """ANT Section 9.5.2.17 (0x66)
+
+    Message to configure a channel based on the expected device connection.
+    """
+
     def __init__(self, enable: bool = True):
         content = bytes([0, int(enable)])
-        super().__init__(MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
+        super().__init__(c.MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
 
 
 class LibConfigMessage(Message):
-    def __init__(self, rxTimestamp: bool = True, rssi: bool = True, channelId: bool = True):
+    """ANT Section 9.5.2.20 (0x6E)
+
+    Tell ANT to utilize extended packet usage
+    """
+
+    def __init__(self, rx_timestamp: bool = True,
+                 rssi: bool = True,
+                 channel_ID: bool = True):
         config = 0
-        if rxTimestamp:
-            config |= EXT_FLAG_TIMESTAMP
+        if rx_timestamp:
+            config |= c.EXT_FLAG_TIMESTAMP
         if rssi:
-            config |= EXT_FLAG_RSSI
-        if channelId:
-            config |= EXT_FLAG_CHANNEL_ID
-        super().__init__(MESSAGE_LIB_CONFIG, bytes([0, config]))
+            config |= c.EXT_FLAG_RSSI
+        if channel_ID:
+            config |= c.EXT_FLAG_CHANNEL_ID
+        super().__init__(c.MESSAGE_LIB_CONFIG, bytes([0, config]))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
 
 
-# %% Control Messages
-class SystemResetMessage(Message):
+# %% Control Messages ANT Section 9.5.4
+class ResetSystemMessage(Message):
+    """ANT Section 9.5.4.1 (0x4A)
+
+    Reset device and put in low-power state. Terminate all channels and cease
+    all communication. Most devices will reply with a startup message
+    """
+
     def __init__(self):
-        super().__init__(MESSAGE_SYSTEM_RESET, b'\x00') # Pcavana 2 March 2023 - Change content to b'\x00'
-        self.expect_reply = True
+        super().__init__(c.MESSAGE_SYSTEM_RESET, bytes([0]))
+        self.reply_type = c.MESSAGE_STARTUP
         self.source = 'Host'
         self.callback = StartUpMessage.disp_startup
-        self.reply_type = MESSAGE_STARTUP
+
+
+class OpenChannelMessage(Message):
+    """ANT Section 9.5.4.2 (0x4B)
+
+    Open a channel on a device. Channel must have been assigned and configured
+    previously.
+    """
+
+    def __init__(self, channel: int = 0):
+        """
+        Construct Open Channel message
+
+        Parameters
+        ----------
+        channel : int
+            Channel number on device to open
+
+        Returns
+        -------
+        None
+        """
+        super().__init__(c.MESSAGE_CHANNEL_OPEN, bytes([channel]))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
+
+
+class CloseChannelMessage(Message):
+    """ANT Section 9.5.4.3 (0x4C)
+
+    Close a channel on a device. Host will recieve two replies: initially a
+    RESPONSE_NO_ERROR followed by an EVENT_CHANNEL_CLOSED. Host needs to wait
+    until a channel close message is recieved to perform any new operations
+    """
+
+    def __init__(self, channel: int = 0):
+        """
+        Construct Open Channel message
+
+        Parameters
+        ----------
+        channel : int
+            Channel number on device to open
+
+        Returns
+        -------
+        None
+        """
+        super().__init__(c.MESSAGE_CHANNEL_OPEN, bytes([channel]))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
+        # TODO: Implement Callback to wait for both expected responses to close
 
 
 class OpenRxScanModeMessage(Message):
+    """ANT Section 9.5.4.5 (0x5B)
+
+    Opens Channel 0 in continuous scanning mode. Device will recieve all
+    messages from any device in range configured to the same channel ID
+    """
+
+    def __init__(self, sync_channel_packets_only: bool = False):
+        super().__init__(c.MESSAGE_OPEN_RX_SCAN_MODE,
+                         bytes([0, sync_channel_packets_only]))
+        self.reply_type = c.MESSAGE_CHANNEL_EVENT
+        self.source = 'Host'
+
+
+class SleepMessage(Message):
+    """ANT Section 9.5.4.6 (0xC5)
+
+    Put device in sleep mode (ultra low power state). Not appliciable to USB
+    devices.
+    """
+
     def __init__(self):
-        super().__init__(MESSAGE_OPEN_RX_SCAN_MODE, bytes([0]))
+        super().__init__(c.MESSAGE_SLEEP, bytes([0]))
+        self.source = 'Host'
+        self.callback = StartUpMessage.disp_startup
 
 
 # %%% Request Messages
 class RequestMessage(Message):
+    """ANT Section 9.5.4.4 (0x4D)
+
+    Message sent to request specific information from the device. ANT will
+    with specific message page based on request. Follwing subclasses of request
+    message correspond to avaliable request message types and expected replies
+    """
+
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CHANNEL_REQUEST, content)
-        self.expect_reply = True
+        super().__init__(c.MESSAGE_CHANNEL_REQUEST, content)
         self.source = 'Host'
 
 
 class RequestCapabilitiesMessage(RequestMessage):
     def __init__(self):
-        content = bytearray([0, MESSAGE_CAPABILITIES])
+        content = bytearray([0, c.MESSAGE_CAPABILITIES])
         super().__init__(content)
-        self.source = 'Host'
         self.callback = CapabilitiesMessage.disp_capabilities
-        self.reply_type = MESSAGE_CAPABILITIES
+        self.reply_type = c.MESSAGE_CAPABILITIES
 
 
 class RequestChannelStatusMessage(RequestMessage):
     def __init__(self, channel_num: int):
-        content = bytearray([channel_num, MESSAGE_CHANNEL_STATUS])
+        content = bytearray([channel_num, c.MESSAGE_CHANNEL_STATUS])
         super().__init__(content)
-        self.source = 'Host'
         self.callback = ChannelStatusMessage.disp_status
-        self.reply_type = MESSAGE_CHANNEL_STATUS
+        self.reply_type = c.MESSAGE_CHANNEL_STATUS
 
 
 class RequestChannelIDMessage(RequestMessage):
     def __init__(self, channel_num: int):
-        content = bytearray([channel_num, MESSAGE_CHANNEL_ID])
+        content = bytearray([channel_num, c.MESSAGE_CHANNEL_ID])
         super().__init__(content)
-        self.source = 'Host'
         self.callback = ChannelIDMessage.disp_ID
-        self.reply_type = MESSAGE_CHANNEL_ID
+        self.reply_type = c.MESSAGE_CHANNEL_ID
 
 
 class RequestSerialNumberMessage(RequestMessage):
     def __init__(self):
-        content = bytearray([0, MESSAGE_SERIAL_NUMBER])
+        content = bytearray([0, c.MESSAGE_SERIAL_NUMBER])
         super().__init__(content)
-        self.source = 'Host'
         self.callback = SerialNumberMessage.disp_SN
-        self.reply_type = MESSAGE_SERIAL_NUMBER
+        self.reply_type = c.MESSAGE_SERIAL_NUMBER
 
 
 # %% Data Messages
@@ -166,38 +496,41 @@ class RequestSerialNumberMessage(RequestMessage):
 class BroadcastMessage(Message):
     def __init__(self, type: int, content: bytes):
         self.flag = None
-        self.deviceNumber = self.deviceType = self.transType = None
-        self.rssiMeasurementType = self.rssi = self._rssiThreshold = None
+        self.device_number = self.device_type = self.tx_type = None
+        self.rssi_measurement_type = self.rssi = self._rssi_threshold = None
         self.rssi = None
-        self.rssiThreshold = None
-        self.rxTimestamp = None
+        self.rssi_threshold = None
+        self.rx_timestamp = None
         self.channel = None
-        self.extendedContent = None
+        self.ext_content = None
 
         super().__init__(type, content)
 
     def build(self, raw: bytes):
-        self._type = MESSAGE_CHANNEL_BROADCAST_DATA
+        self._type = c.MESSAGE_CHANNEL_BROADCAST_DATA
         self.channel = raw[0]
         self._content = raw[1:9]
         if len(raw) > 9:  # Extended message
             self.flag = raw[9]
-            self.extendedContent = raw[10:]
+            self.ext_content = raw[10:]
             offset = 0
-            if self.flag & EXT_FLAG_CHANNEL_ID:
-                self.deviceNumber = int.from_bytes(self.extendedContent[:2], byteorder='little', signed=False)
-                self.deviceType = self.extendedContent[2]
-                self.transType = self.extendedContent[3]
+            if self.flag & c.EXT_FLAG_CHANNEL_ID:
+                self.device_number = int.from_bytes(self.ext_content[:2],
+                                                    byteorder='little',
+                                                    signed=False)
+                self.device_type = self.ext_content[2]
+                self.tx_type = self.ext_content[3]
                 offset += 4
-            if self.flag & EXT_FLAG_RSSI:
-                rssi = self.extendedContent[offset:(offset + 3)]
-                self.rssiMeasurementType = rssi[0]
+            if self.flag & c.EXT_FLAG_RSSI:
+                rssi = self.ext_content[offset:(offset + 3)]
+                self.rssi_measurement_type = rssi[0]
                 self.rssi = rssi[1]
-                self.rssiThreshold = rssi[2]
+                self.rssi_threshold = rssi[2]
                 offset += 3
-            if self.flag & EXT_FLAG_TIMESTAMP:
-                self.rxTimestamp = int.from_bytes(self.extendedContent[offset:],
-                                                  byteorder='little', signed=False)
+            if self.flag & c.EXT_FLAG_TIMESTAMP:
+                self.rx_timestamp = int.from_bytes(self.ext_content[offset:],
+                                                   byteorder='little',
+                                                   signed=False)
         return self
 
     def checksum(self) -> int:
@@ -209,11 +542,18 @@ class BroadcastMessage(Message):
 
 # %% Notification Messages
 class StartUpMessage:
+    """ANT Section 9.5.3.1 (0x6F)
+
+    Message sent by ANT upond device startup or after reset event. Message
+    contains information on reset type
+    """
+
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_STARTUP, content)
+        super().__init__(c.MESSAGE_STARTUP, content)
+        self.source = 'ANT'
 
     def disp_startup(msg):
-        if not msg.type == MESSAGE_STARTUP:
+        if not msg.type == c.MESSAGE_STARTUP:
             return(f"Error: Unexpected Message Type {msg.type}")
         start_bits = bit_array(msg.content[0])
         start_str = 'Device Startup Successful. Reset type:\n'
@@ -227,36 +567,51 @@ class StartUpMessage:
             start_str += '\tSYNCHRONOUS_RESET\n'
         if start_bits[7]:
             start_str += '\tSUSPEND_RESET\n'
-        return(start_str[0:-1])
+        return(start_str)
 
 
 class SerialErrorMessage:
-    def __init__(self, content: bytes):
-        super().__init__(MESSAGE_SERIAL_ERROR, content)
+    """ANT Section 9.5.3.2 (0xAE)
 
-# TODO: Unpack Serial Error Message
+    Message sent by ANT to indicate a standard message packet was improperly
+    formatted. Message contains error code in place of channel byte and copies
+    the sent message as the rest of the message content
+    """
+
+    def __init__(self, content: bytes):
+        super().__init__(c.MESSAGE_SERIAL_ERROR, content)
+        self.source = "ANT"
+
     def disp_serial_error(msg):
-        if not msg.type == MESSAGE_SERIAL_ERROR:
+        if not msg.type == c.MESSAGE_SERIAL_ERROR:
             return(f"Error: Unexpected Message Type {msg.type}")
-        start_bits = bit_array(msg.content[0])
-        start_str = 'Device Startup Successful. Reset type:\n'
-        if start_bits[0]:
-            start_str += '\tHARDWARE_RESET_LINE\n'
-        if start_bits[1]:
-            start_str += '\tWATCH_DOG_RESET\n'
-        if start_bits[5]:
-            start_str += '\tCOMMAND_RESET\n'
-        if start_bits[6]:
-            start_str += '\tSYNCHRONOUS_RESET\n'
-        if start_bits[7]:
-            start_str += '\tSUSPEND_RESET\n'
-        return(start_str[0:-1])
+        err_str = 'ERROR: Serial Error: '
+        match msg[0]:
+            case 0:
+                err_str += ('First message byte does not match ANT'
+                            ' serial message Tx synch byte (0xA4)')
+            case 2:
+                err_str += ('Checksum of ANT message is incorrect')
+            case 3:
+                err_str += ('Size of ANT message is too large')
+
+        err_str += '\nInvalid Message: {str(msg)}\n'
+        return(err_str)
 
 
 # %% Requested Response Messages
 class CapabilitiesMessage(Message):
+    """ANT Section 9.5.7.4 (0x54)
+
+    Message sent from ANT in response to capabilities request message. Message
+    contains summary of ANT device capabilities. See ANT Document for full
+    implementation
+    """
+    # TODO: Add capabilities request and unpack to thread start to enforce
+    # Input checking (channel numbers and network numbers)
+
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CAPABILITIES, content)
+        super().__init__(c.MESSAGE_CAPABILITIES, content)
         self.capabilities_dict = {}
         capabilities_keys = ['max_channels', 'max_networks', 'std_options',
                              'adv_options', 'adv_options2',
@@ -269,7 +624,7 @@ class CapabilitiesMessage(Message):
         self.source = 'ANT'
 
     def disp_capabilities(msg):
-        if not msg.type == MESSAGE_CAPABILITIES:
+        if not msg.type == c.MESSAGE_CAPABILITIES:
             return(f"Error: Unexpected Message Type {msg.type}")
 
         cap_msg = CapabilitiesMessage(msg.content)
@@ -325,10 +680,14 @@ class CapabilitiesMessage(Message):
 
 
 class ChannelStatusMessage(Message):
-    """ANT Protocol Section 9.5.7.1."""
+    """ANT Section 9.5.7.1 (0x52)
+
+    Message sent from ANT in response to channel status request message.
+    Message contains channel type, network number and channel state.
+    """
 
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CHANNEL_STATUS, content)
+        super().__init__(c.MESSAGE_CHANNEL_STATUS, content)
         self.channel_num = int(content[0])
         channel_status = bit_array(content[1])
         match bits_2_num(channel_status[6:8]):
@@ -345,7 +704,7 @@ class ChannelStatusMessage(Message):
         self.source = 'ANT'
 
     def disp_status(msg):
-        if not msg.type == MESSAGE_CHANNEL_STATUS:
+        if not msg.type == c.MESSAGE_CHANNEL_STATUS:
             return(f"Error: Unexpected Message Type {msg.type}")
 
         status_msg = ChannelStatusMessage(msg.content)
@@ -375,11 +734,15 @@ class ChannelStatusMessage(Message):
 
 
 class ChannelIDMessage(Message):
-    """ANT Protocol Section 9.5.7.2."""
+    """ANT Section 9.5.7.2 (0x51)
+
+    Message sent from ANT in response to channel ID request message.
+    Message contains channel number, device number, device type ID and tx type
+    """
     # TODO: Implement Extended Device number field in Tx Type
 
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_CHANNEL_ID, content)
+        super().__init__(c.MESSAGE_CHANNEL_ID, content)
         self.channel_num = int(content[0])
         self.device_number = int.from_bytes((content[1].to_bytes(1, 'little') +
                                             content[2].to_bytes(1, 'little')),
@@ -388,7 +751,7 @@ class ChannelIDMessage(Message):
         self.tx_type = bit_array(content[4])
 
     def disp_ID(msg):
-        if not msg.type == MESSAGE_CHANNEL_ID:
+        if not msg.type == c.MESSAGE_CHANNEL_ID:
             return(f"Error: Unexpected Message Type {msg.type}")
 
         id_msg = ChannelIDMessage(msg.content)
@@ -419,7 +782,7 @@ class ChannelIDMessage(Message):
 
 class SerialNumberMessage(Message):
     def __init__(self, content: bytes):
-        super().__init__(MESSAGE_SERIAL_NUMBER, content)
+        super().__init__(c.MESSAGE_SERIAL_NUMBER, content)
         x = b''
         for i in content:
             x += i.to_bytes(1, 'little')
@@ -427,7 +790,7 @@ class SerialNumberMessage(Message):
         self.source = 'ANT'
 
     def disp_SN(msg):
-        if not msg.type == MESSAGE_SERIAL_NUMBER:
+        if not msg.type == c.MESSAGE_SERIAL_NUMBER:
             return(f"Error: Unexpected Message Type {msg.type}")
 
         SN_msg = SerialNumberMessage(msg.content)
