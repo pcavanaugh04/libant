@@ -3,7 +3,8 @@ from queue import Queue, Empty
 from time import sleep
 
 from libAnt.drivers.driver import Driver
-from libAnt.message import *
+import libAnt.message as m
+import libAnt.constants as c
 import traceback
 
 
@@ -48,18 +49,18 @@ class Pump(threading.Thread):
             try:
                 with self._driver as d:
                     # Startup
-                    rst = SystemResetMessage()
+                    rst = m.ResetSystemMessage()
                     self._waiters.append((rst, rst.callback))
                     d.write(rst)
                     # Wait time for Stick to complete reset event
                     sleep(0.6)
 
-                    for m in self._initMessages:
-                        if hasattr(m, 'reply_type'):
-                            self._waiters.append((m, m.callback))
+                    for msg in self._initMessages:
+                        if hasattr(msg, 'reply_type'):
+                            self._waiters.append((msg, msg.callback))
                         else:
-                            self._waiters.append((m))
-                        self._out.put(m)
+                            self._waiters.append((msg))
+                        self._out.put(msg)
 
                     while not self.stopped():
                         #  Write
@@ -73,36 +74,32 @@ class Pump(threading.Thread):
 
                         except Exception as e:
                             print(e)
-                            
+
                         else:
-                            if hasattr(outMsg, 'reply_type'):
-                                self._waiters.append((outMsg, outMsg.callback))
-                            else:
-                                self._waiters.append((outMsg))
+                            self._waiters.append((outMsg, outMsg.callback))
 
                         # Read
                         try:
                             msg = d.read(timeout=1)
-                            # Diagnostic Print Statement to view incoming message
+                            # Diagnostic Print Statements view incoming message
                             # print(f'Message Recieved: {msg}')
                             # print(f'Message Type: {msg.type}')
-
-                            # TODO: build a library of the expected resonses associated with each control function
-
                             # print(f'Waiter msg: {w[0]}')
                             # print(f'Waiter msg type: {w[0].type}')
 
-                            if msg.type == MESSAGE_CHANNEL_EVENT:
+                            if msg.type == c.MESSAGE_CHANNEL_EVENT:
                                 # This is a response to our outgoing message
                                 for w in self._waiters:
-                                    if w[0].type == msg.content[1]: # ACK
+                                    if w[0].type == msg.content[1]:  # ACK
                                         if w[1] is not None:
                                             self._onSuccess(w[1](msg))
 
                                         self._waiters.remove(w)
                                         break
-                            elif msg.type == MESSAGE_CHANNEL_BROADCAST_DATA:
-                                bmsg = BroadcastMessage(msg.type, msg.content).build(msg.content)
+                            elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
+                                bmsg = m.BroadcastMessage(msg.type,
+                                                          msg.content)
+                                bmsg = bmsg.build(msg.content)
                                 self._onSuccess(bmsg)
 
                             # Framework for setting up control messages and processing replies from the stick
@@ -122,8 +119,7 @@ class Pump(threading.Thread):
             except Exception as e:
                 traceback.print_exc()
                 self._onFailure(e)
-            except:
-                pass
+
             self._waiters.clear()
             sleep(1)
 
@@ -147,19 +143,27 @@ class Node:
         if not self.isRunning():
             self.onSuccess = onSuccess
             self.onFailure = onFailure
-            self._pump = Pump(self._driver, self._init, self._out, onSuccess, onFailure)
+            self._pump = Pump(self._driver,
+                              self._init,
+                              self._out,
+                              onSuccess,
+                              onFailure)
             self._pump.start()
 
-    def enableRxScanMode(self, networkKey=ANTPLUS_NETWORK_KEY, channelType=CHANNEL_TYPE_ONEWAY_RECEIVE,
-                         frequency: int = 2457, rxTimestamp: bool = True, rssi: bool = True, channelId: bool = True):
-        self._init.append(SystemResetMessage())
-        self._init.append(SetNetworkKeyMessage(0, networkKey))
-        self._init.append(AssignChannelMessage(0, channelType))
-        self._init.append(SetChannelIdMessage(0))
-        self._init.append(SetChannelRfFrequencyMessage(0, frequency))
-        self._init.append(EnableExtendedMessagesMessage())
-        self._init.append(LibConfigMessage(rxTimestamp, rssi, channelId))
-        self._init.append(OpenRxScanModeMessage())
+    def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,
+                         channelType=c.CHANNEL_TYPE_ONEWAY_RECEIVE,
+                         frequency: int = 2457,
+                         rxTimestamp: bool = True,
+                         rssi: bool = True,
+                         channelId: bool = True):
+        self._init.append(m.SystemResetMessage())
+        self._init.append(m.SetNetworkKeyMessage(0, networkKey))
+        self._init.append(m.AssignChannelMessage(0, channelType))
+        self._init.append(m.SetChannelIdMessage(0))
+        self._init.append(m.SetChannelRfFrequencyMessage(0, frequency))
+        self._init.append(m.EnableExtendedMessagesMessage())  # Do I need to do this?
+        self._init.append(m.LibConfigMessage(rxTimestamp, rssi, channelId))  # What is this?
+        self._init.append(m.OpenRxScanModeMessage())
 
     def stop(self):
         if self.isRunning():
@@ -171,17 +175,54 @@ class Node:
             return False
         return self._pump.is_alive()
 
+    # TODO: Should _out be classed as a property?
+    
     def getCapabilities(self):
-        self._out.put(RequestCapabilitiesMessage(), block=False)
+        self._out.put(m.RequestCapabilitiesMessage(), block=False)
 
     def getChannelStatus(self, channel_num: int):
-        self._out.put(RequestChannelStatusMessage(channel_num), block=False)
+        self._out.put(m.RequestChannelStatusMessage(channel_num), block=False)
 
     def getChannelID(self, channel_num: int):
-        self._out.put(RequestChannelIDMessage(channel_num), block=False)
+        self._out.put(m.RequestChannelIDMessage(channel_num), block=False)
 
     def getANTSerialNumber(self):
-        self._out.put(RequestSerialNumberMessage(), block=False)
+        self._out.put(m.RequestSerialNumberMessage(), block=False)
+
+    def openChannel(self, network_key=c.ANTPLUS_NETWORK_KEY,
+                    channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
+                    frequency: int = 2457,
+                    rxTimestamp: bool = True,
+                    rssi: bool = True,
+                    channelId: bool = True):
+        """Open ANT Channel with Given Parameters.
+
+        Default is bidirectional slave channel on ANT+ Network
+
+        Parameters
+        ----------
+        network_key : bytes, optional
+            ANT network key for device connection. Set to zero for public key.
+            The default is ANTPLUS_NETWORK_KEY.
+        channel_type : hex, optional
+            Hex value of channel type corresponding to ANT Protocol usage doc
+            section X.X.XX. The default is CHANNEL_BIDIRECTIONAL_SLAVE.
+        frequency : int, optional
+            RF frequency band of the channel.
+            The default is 2457 for ANT+ Devices.
+        rxTimestamp : bool, optional
+            DESCRIPTION. The default is True.
+        rssi : bool, optional
+            DESCRIPTION. The default is True.
+        channelId : bool, optional
+            DESCRIPTION. The default is True.
+
+        Returns
+        -------
+        None.
+
+        """
 
 # TODO: Make Channel Class as attribute of node
 # class Channel:
+    
