@@ -71,7 +71,7 @@ class Message:
         b.append(self.checksum())
         return bytes(b)
 
-    def device_reply(msg, msg_type):
+    def device_reply(self, msg, msg_type):
         """
         Callback to check status of a set network key message request
 
@@ -89,12 +89,12 @@ class Message:
         if msg.type == c.MESSAGE_SERIAL_ERROR:
             return(SerialErrorMessage.disp_serial_error(msg))
         if not msg.type == c.MESSAGE_CHANNEL_EVENT:
-            return(f"Error: Unexpected Message Type {msg.type}")
-        if not msg.content[1] == msg_type:
-            return((f"Error: Unexpected Message Type {msg.type}"))
+            return(f"Error: Unexpected Message Type {hex(msg.type)}")
+        if not msg.content[1] == (msg_type):
+            return(f"Error: Unexpected Message Type {hex(msg.type)}")
         if msg.content[2] == 0:
-            return(f'Message Success. Type: {type}')
-        # else:
+            return(f'Message Success. Type: {hex(msg_type)}')
+        # TODO: else:
         #     return(process_error_code(msg.content[2]))
 
     @property
@@ -125,32 +125,7 @@ class SetNetworkKeyMessage(Message):
         super().__init__(c.MESSAGE_NETWORK_KEY, bytes(content))
         self.key = key
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
-        self.callback = self.network_success
         self.source = 'Host'
-
-    def device_reply(msg: Message):
-        """
-        Callback to check status of a set network key message request
-
-        Parameters
-        ----------
-        msg : Message
-            Event message from ANT device containing status of request.
-
-        Returns
-        -------
-        str
-            Confirmation or Error message based on ANT reply.
-
-        """
-        if not msg.type == c.MESSAGE_CHANNEL_EVENT:
-            return(f"Error: Unexpected Message Type {msg.type}")
-        if not msg.content[1] == c.MESSAGE_NETWORK_KEY:
-            return((f"Error: Unexpected Message Type {msg.type}"))
-        if msg.content[2] == 0:
-            return('Successfully Set Network Key')
-        # else:
-        #     return(process_error_code(msg.content[2]))
 
 
 class UnassignChannelMessage(Message):
@@ -166,28 +141,6 @@ class UnassignChannelMessage(Message):
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         # self.callback = self.device_reply
         self.source = 'Host'
-
-    # def device_reply(msg):
-    #     """
-    #     Callback to check status of a set network key message request
-
-    #     Parameters
-    #     ----------
-    #     msg : Message
-    #         Event message from ANT device containing status of request.
-
-    #     Returns
-    #     -------
-    #     str
-    #         Confirmation or Error message based on ANT reply.
-
-    #     """
-    #     if not msg.type == c.MESSAGE_CHANNEL_EVENT:
-    #         return(f"Error: Unexpected Message Type {msg.type}")
-    #     if not msg.content[1] == c.MESSAGE_NETWORK_KEY:
-    #         return((f"Error: Unexpected Message Type {msg.type}"))
-    #     if msg.content[2] == 0:
-    #         return('Successfully Set Network Key')
 
 
 class AssignChannelMessage(Message):
@@ -253,9 +206,9 @@ class ChannelMessagingPeriodMessage(Message):
         None
 
         """
-        content = bytes([channel])
-        content.extend((1/frequency*32768).to_bytes(2, byteorder='little'))
-        super().__init__(c.MESSAGE_CHANNEL_FREQUENCY, content)
+        content = bytearray([channel])
+        content.extend(int(1/frequency*32768).to_bytes(2, byteorder='little'))
+        super().__init__(c.MESSAGE_CHANNEL_PERIOD, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -283,7 +236,7 @@ class ChannelSearchTimeoutMessage(Message):
         None
 
         """
-        content = bytes([channel, timeout/2.5])
+        content = bytes([channel, int(timeout/2.5)])
         super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'

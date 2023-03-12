@@ -19,7 +19,11 @@ class Network:
 
 
 class Pump(threading.Thread):
-    def __init__(self, driver: Driver, initMessages, out: Queue, onSuccess, onFailure):
+    def __init__(self, driver: Driver,
+                 initMessages,
+                 out: Queue,
+                 onSuccess,
+                 onFailure):
         super().__init__()
         self._stopper = threading.Event()
         self._driver = driver
@@ -28,11 +32,11 @@ class Pump(threading.Thread):
         self._waiters = []
         self._onSuccess = onSuccess
         self._onFailure = onFailure
-    
-    def __enter__(self):                #Added by edyas 02/12/21
+
+    def __enter__(self):  # Added by edyas 02/12/21
         return self
-    
-    def __exit__(self):                 #Added by edyas 02/12/21
+
+    def __exit__(self):  # Added by edyas 02/12/21
         self.stop()
 
     def stop(self):
@@ -43,7 +47,6 @@ class Pump(threading.Thread):
         return self._stopper.isSet()
 
 # Theres gotta be a better way to organize this run method? Right?
-# Waiters array appears to be messages that are awating a response from the stick
     def run(self):
         while not self.stopped():
             try:
@@ -53,13 +56,10 @@ class Pump(threading.Thread):
                     self._waiters.append((rst, rst.callback))
                     d.write(rst)
                     # Wait time for Stick to complete reset event
-                    sleep(0.6)
+                    sleep(1)
 
                     for msg in self._initMessages:
-                        if hasattr(msg, 'reply_type'):
-                            self._waiters.append((msg, msg.callback))
-                        else:
-                            self._waiters.append((msg))
+                        self._waiters.append((msg, msg.callback))
                         self._out.put(msg)
 
                     while not self.stopped():
@@ -92,7 +92,8 @@ class Pump(threading.Thread):
                                 for w in self._waiters:
                                     if w[0].type == msg.content[1]:  # ACK
                                         if w[1] is not None:
-                                            self._onSuccess(w[1](msg))
+                                            self._onSuccess(w[1](msg,
+                                                                 w[0].type))
 
                                         self._waiters.remove(w)
                                         break
@@ -102,14 +103,15 @@ class Pump(threading.Thread):
                                 bmsg = bmsg.build(msg.content)
                                 self._onSuccess(bmsg)
 
-                            # Framework for setting up control messages and processing replies from the stick
                             # Patrick's Stuff
                             else:
+                                # Messages from requested message pages
                                 for w in self._waiters:
                                     if len(w) == 2:  # m has msg and callback
                                         if msg.type == w[0].reply_type:
                                             self._onSuccess(w[1](msg))
                                             self._waiters.remove(w)
+                                            break
                                     else:
                                         self._onSuccess(msg)
                                         self._waiters.remove(w)
@@ -121,7 +123,7 @@ class Pump(threading.Thread):
                 self._onFailure(e)
 
             self._waiters.clear()
-            sleep(1)
+            sleep(0.1)
 
 
 class Node:
@@ -156,13 +158,13 @@ class Node:
                          rxTimestamp: bool = True,
                          rssi: bool = True,
                          channelId: bool = True):
-        self._init.append(m.SystemResetMessage())
+        self._init.append(m.ResetSystemMessage())
         self._init.append(m.SetNetworkKeyMessage(0, networkKey))
         self._init.append(m.AssignChannelMessage(0, channelType))
         self._init.append(m.SetChannelIdMessage(0))
         self._init.append(m.SetChannelRfFrequencyMessage(0, frequency))
-        self._init.append(m.EnableExtendedMessagesMessage())  # Do I need to do this?
-        self._init.append(m.LibConfigMessage(rxTimestamp, rssi, channelId))  # What is this?
+        self._init.append(m.EnableExtendedMessagesMessage())
+        self._init.append(m.LibConfigMessage(rxTimestamp, rssi, channelId))
         self._init.append(m.OpenRxScanModeMessage())
 
     def stop(self):
@@ -176,8 +178,8 @@ class Node:
         return self._pump.is_alive()
 
     # TODO: Should _out be classed as a property?
-    
-    def getCapabilities(self):
+
+    def get_capabilities(self):
         self._out.put(m.RequestCapabilitiesMessage(), block=False)
 
     def getChannelStatus(self, channel_num: int):
@@ -186,15 +188,16 @@ class Node:
     def getChannelID(self, channel_num: int):
         self._out.put(m.RequestChannelIDMessage(channel_num), block=False)
 
-    def getANTSerialNumber(self):
+    def get_ANT_serial_number(self):
         self._out.put(m.RequestSerialNumberMessage(), block=False)
 
-    def openChannel(self, network_key=c.ANTPLUS_NETWORK_KEY,
-                    channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
-                    frequency: int = 2457,
-                    rxTimestamp: bool = True,
-                    rssi: bool = True,
-                    channelId: bool = True):
+    def pair_FEC_channel(self, network_key=c.ANTPLUS_NETWORK_KEY,
+                         channel_number=0,
+                         channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
+                         frequency: int = 2457,
+                         rxTimestamp: bool = True,
+                         rssi: bool = True,
+                         channelId: bool = True):
         """Open ANT Channel with Given Parameters.
 
         Default is bidirectional slave channel on ANT+ Network
@@ -222,7 +225,17 @@ class Node:
         None.
 
         """
+        self._init.append(m.ResetSystemMessage())
+        self._init.append(m.SetNetworkKeyMessage(channel_number, network_key))
+        self._init.append(m.AssignChannelMessage(channel_number, channel_type))
+        self._init.append(m.SetChannelIdMessage(channel_number,
+                                                device_type=17))
+        self._init.append(m.SetChannelRfFrequencyMessage(channel_number,
+                                                         frequency))
+        self._init.append(m.ChannelMessagingPeriodMessage(channel_number))
+        self._init.append(m.ChannelSearchTimeoutMessage(channel_number))
+        # Should we implement a waiter to ensure config is correct?
+        self._init.append(m.OpenChannelMessage(channel_number))
 
 # TODO: Make Channel Class as attribute of node
 # class Channel:
-    
