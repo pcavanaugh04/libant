@@ -24,7 +24,7 @@ def eCallback(e):
 n = Node(USBDriver(vid=0x0FCF, pid=0x1008), 'MyNode')
 
 n.start(callback, eCallback)
-n.getCapabilities()
-n.getANTSerialNumber()
-sleep(1)  # Listen for 1sec
+n.get_capabilities()
+n.get_ANT_serial_number()
+sleep(0.5)  # Listen for 1sec
 n.stop()  # Close Node
