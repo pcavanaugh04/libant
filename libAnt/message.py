@@ -365,7 +365,7 @@ class CloseChannelMessage(Message):
         -------
         None
         """
-        super().__init__(c.MESSAGE_CHANNEL_OPEN, bytes([channel]))
+        super().__init__(c.MESSAGE_CHANNEL_CLOSE, bytes([channel]))
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
         # TODO: Implement Callback to wait for both expected responses to close
@@ -494,18 +494,20 @@ class BroadcastMessage(Message):
 
 
 # %% Notification Messages
-class StartUpMessage:
+class StartUpMessage(Message):
     """ANT Section 9.5.3.1 (0x6F)
 
     Message sent by ANT upond device startup or after reset event. Message
     contains information on reset type
     """
 
-    def __init__(self, content: bytes):
+    def __init__(self, content):
+        content = bytes(content)
         super().__init__(c.MESSAGE_STARTUP, content)
         self.source = 'ANT'
+        self.callback = self.disp_startup
 
-    def disp_startup(msg):
+    def disp_startup(self, msg):
         if not msg.type == c.MESSAGE_STARTUP:
             return(f"Error: Unexpected Message Type {msg.type}")
         start_bits = bit_array(msg.content[0])
@@ -523,7 +525,7 @@ class StartUpMessage:
         return(start_str)
 
 
-class SerialErrorMessage:
+class SerialErrorMessage(Message):
     """ANT Section 9.5.3.2 (0xAE)
 
     Message sent by ANT to indicate a standard message packet was improperly
@@ -575,8 +577,9 @@ class CapabilitiesMessage(Message):
                 value = bit_array(value)
             self.capabilities_dict[capabilities_keys[i]] = value
         self.source = 'ANT'
+        self.callback = self.disp_capabilities
 
-    def disp_capabilities(msg):
+    def disp_capabilities(self, msg):
         if not msg.type == c.MESSAGE_CAPABILITIES:
             return(f"Error: Unexpected Message Type {msg.type}")
 

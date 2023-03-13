@@ -22,6 +22,11 @@ def eCallback(e):
 # USBm sticks have pid=0x1009
 # USB2 sticks have pid=0x1008
 n = Node(USBDriver(vid=0x0FCF, pid=0x1008), callback, eCallback, 'MyNode')
-n.get_capabilities(disp=True)
-sleep(1)  # Listen for 1sec
+n.open_channel(channel_num=0, device='HR')
+sleep(5)
+n.get_capabilities()
+sleep(5)
+n.channels[0].close()
+sleep(5)
+sleep(0.5)  # Listen for 1sec
 n.stop()  # Close Node
