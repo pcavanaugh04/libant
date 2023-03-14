@@ -9,18 +9,18 @@ import libAnt.constants as c
 
 
 class SerialError(Exception):
-    def init(self):
-        pass
+    def __init__(self, message=None):
+        super().__init__(message)
 
 
 class RxFail(Exception):
-    def init(self):
-        pass
+    def __init__(self, message="Rx Fail"):
+        super().__init__(message)
 
 
 class TxFail(Exception):
-    def init(self):
-        pass
+    def __init__(self, message="Tx Fail"):
+        super().__init__(message)
 
 
 class RxSearchTimeout(Exception):

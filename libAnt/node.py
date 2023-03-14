@@ -26,7 +26,8 @@ class Pump(threading.Thread):
                  output_queue: Queue,
                  tx_queue: Queue,
                  onSuccess,
-                 onFailure):
+                 onFailure,
+                 debug):
         super().__init__()
         self._stopper = threading.Event()
         self._driver = driver
@@ -39,6 +40,7 @@ class Pump(threading.Thread):
         self._tx_waiters = []
         self._onSuccess = onSuccess
         self._onFailure = onFailure
+        self._debug = debug
 
     def __enter__(self):  # Added by edyas 02/12/21
         return self
@@ -79,10 +81,11 @@ class Pump(threading.Thread):
                     try:
                         msg = d.read(timeout=1)
                         # Diagnostic Print Statements view incoming message
-                        # print(f'Message Recieved: {msg}')
-                        # print(f'Message Type: {msg.type}')
-                        # print(f'Waiter msg: {w[0]}')
-                        # print(f'Waiter msg type: {w[0].type}')
+                        if self._debug:
+                            print(f'Message Recieved: {msg}')
+                            # print(f'Message Type: {msg.type}')
+                            # print(f'Waiter msg: {w[0]}')
+                            # print(f'Waiter msg type: {w[0].type}')
                     except Empty:
                         pass
 
@@ -91,7 +94,6 @@ class Pump(threading.Thread):
                             out = self.process_read_message(msg)
 
                         except Exception as e:
-                            print(e)
                             raise e
 
                         else:
@@ -99,11 +101,13 @@ class Pump(threading.Thread):
                                 self._onSuccess(out)
 
                 except DriverException as e:
-                    print("Do we get here?")
                     traceback.print_exc()
                     self._onFailure(e)
                     self.stop()
                     raise e
+
+                except ex.RxFail as e:
+                    self._onFailure(e)
 
                 except Exception as e:
                     traceback.print_exc()
@@ -118,7 +122,6 @@ class Pump(threading.Thread):
         try:
             outMsg = queue.get(block=False)
             driver.write(outMsg)
-            # print(f'Message Sent: {outMsg}')
 
         except Empty:
             pass
@@ -127,6 +130,9 @@ class Pump(threading.Thread):
             raise e
 
         else:
+            if self._debug:
+                print(f'Message Sent: {outMsg}')
+
             waiters.append((outMsg, outMsg.callback))
 
     def process_read_message(self, msg):
@@ -159,8 +165,8 @@ class Pump(threading.Thread):
                         self._control_waiters.remove(w)
                     break
 
-            if msg.content[1] == c.MESSAGE_RF_EVENT:
-                # TODO: Encapsulate Event Msg Handler
+            else:
+                # msg.content[1] == c.MESSAGE_RF_EVENT:
                 try:
                     out = m.process_event_code(msg.content[2])
                 except Exception as e:
@@ -169,24 +175,23 @@ class Pump(threading.Thread):
                     return out
 
                 finally:
-                    if (msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED or
-                       msg.content[2] == c.EVENT_TRANSFER_TX_FAILED):
+                    if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                         self._tx.task_done()
-                        self._tx_waiters.remove(w)
+                        self._out.put("Tx Success!")
+                        self._out.join()
+                    elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
+                        self._tx.task_done()
+                        raise ex.TxFail("Tx Failed!")
 
-                # else:
-                #     for w in self._tx_waiters:
-                #         # TODO: Implement tx success and failure
-                #         self._onSuccess(w[1](msg, c.MESSAGE_RF_EVENT))
-                #         self._tx.task_done()
-                #         self._tx_waiters.remove(w)
-                #         # TODO: Raise tx error code
+                        # TODO: Tie Tx messages in waiters back to the expected
+                        # response.
+                        # self._tx_waiters.remove(w)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
             bmsg = m.BroadcastMessage(msg.type,
                                       msg.content)
             bmsg = bmsg.build(msg.content)
-            return out
+            return bmsg
 
         # Patrick's Stuff
         else:
@@ -209,7 +214,7 @@ class Pump(threading.Thread):
                 self._out.put(msg)
                 self._out.join()
                 return
-            
+
             # Messages from requested message pages
             else:
                 for w in self._control_waiters:
@@ -222,7 +227,11 @@ class Pump(threading.Thread):
 
 
 class Node:
-    def __init__(self, driver: Driver, onSuccess, onFailure, name: str = None):
+    def __init__(self, driver: Driver,
+                 onSuccess,
+                 onFailure,
+                 name: str = None,
+                 debug=False):
         self._driver = driver
         self._name = name
         self._out = Queue()
@@ -233,6 +242,8 @@ class Node:
         self.outputs = Queue()
         self.tx_messages = Queue()
         self.channels = []
+        self.debug = debug
+        
         try:
             self.start(onSuccess, onFailure)
         except DriverException as e:
@@ -261,7 +272,8 @@ class Node:
                               self.outputs,
                               self.tx_messages,
                               onSuccess,
-                              onFailure)
+                              onFailure,
+                              self.debug)
             self._pump.start()
             self.reset()
 
@@ -331,14 +343,13 @@ class Node:
             del self.channels[channel_num]
             self.channels[channel_num] = None
 
-    def send_tx_msg(self, channel_num, **kwargs):
-        if 'grade' in kwargs:
-            # Grade input will be in percent
-            # Process percent value to ANT+ Count
-            grade_in = kwargs.get('grade')
-            grade_set = int((grade_in + 200) / 0.01)
-        self.tx_messages.put(m.AcknowledgedMessage(channel_num,
-                                                   grade=grade_set))
+    def send_tx_msg(self, msg):
+        self.tx_messages.put(msg)
+        self.tx_messages.join()
+        msg_status = self.outputs.get()
+        self.outputs.task_done()
+        return(msg_status)
+        # TODO: Implement tx success/fail callbacks
 
     # Depreciated
     def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,

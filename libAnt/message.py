@@ -495,24 +495,15 @@ class BroadcastMessage(Message):
 
 
 class AcknowledgedMessage(Message):
-    """ANT Section 9.5.5.2 (0x4F)"""
+    """ANT Section 9.5.5.2 (0x4F)
 
-    def __init__(self, channel_num: int, **kwargs):
-        if 'grade' in kwargs:
-            pg_num = 0x33
-            byte1 = byte2 = byte3 = byte4 = 0xFF
-            content = bytearray([channel_num, pg_num, byte1,
-                                 byte2, byte3, byte4])
-            grade = kwargs.get('grade')
-            content.extend(int(grade).to_bytes(2, byteorder='big'))
-            C_RR = 0xFF
-            content.append(C_RR)
+    Send from master or slave to recieving node when the success or failure of
+    a message needs to be known
+    """
 
-        super().__init__(c.MESSAGE_CHANNEL_ACKNOWLEDGED_DATA,
-                         bytes(content))
-        self.reply_type = c.MESSAGE_RF_EVENT
-        self.source = 'Host'
-        self.callback = self.device_reply
+    def __init__(self, channel_num, content: bytes):
+        content = bytes([channel_num]) + content
+        super().__init__(c.MESSAGE_CHANNEL_ACKNOWLEDGED_DATA, content)
 
 
 # %% Notification Messages
@@ -822,17 +813,12 @@ def bits_2_num(bit_array):
 def process_event_code(evt_code):
     match evt_code:
         case c.EVENT_RX_FAIL:
-            print("Eh?")
-
             raise e.RxFail()
 
         case c.EVENT_TRANSFER_TX_FAILED:
-            print("Eh?")
-
             raise e.TxFail()
 
         case c.INVALID_MESSAGE:
-            print("Eh?")
             raise e.InvalidMessage()
 
         case c.EVENT_CHANNEL_CLOSED:
@@ -840,5 +826,9 @@ def process_event_code(evt_code):
 
         case c.EVENT_TRANSFER_TX_COMPLETED:
             return("Tx Success")
+
+        case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
+            raise(e.MessageSizeExceedsLimit())
+
         case _:
-            return(evt_code)
+            return(f"Warning: Event Code not yet implemented for :{evt_code}")

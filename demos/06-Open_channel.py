@@ -32,8 +32,7 @@ with Node(USBDriver(vid=0x0FCF, pid=0x1008),
     # Power Meter: device='PWR'
     # Smart Trainer: device='FE-C'
     n.open_channel(channel_num=0, device='HR')
-    sleep(1)
-    # n.send_tx_msg(0, grade=0)
-    # sleep(5)
+    # Wait for a connection and read if avaliable
+    sleep(30)
     n.channels[0].close()
     sleep(1)
