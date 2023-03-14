@@ -2,9 +2,10 @@ import threading
 from queue import Queue, Empty
 from time import sleep
 
-from libAnt.drivers.driver import Driver
+from libAnt.drivers.driver import Driver, DriverException
 import libAnt.message as m
 import libAnt.constants as c
+import libAnt.exceptions as ex
 import traceback
 
 
@@ -23,6 +24,7 @@ class Pump(threading.Thread):
                  config_queue: Queue,
                  control_queue: Queue,
                  output_queue: Queue,
+                 tx_queue: Queue,
                  onSuccess,
                  onFailure):
         super().__init__()
@@ -31,8 +33,10 @@ class Pump(threading.Thread):
         self._config = config_queue
         self._control = control_queue
         self._out = output_queue
+        self._tx = tx_queue
         self._config_waiters = []
         self._control_waiters = []
+        self._tx_waiters = []
         self._onSuccess = onSuccess
         self._onFailure = onFailure
 
@@ -51,125 +55,168 @@ class Pump(threading.Thread):
 
 # Theres gotta be a better way to organize this run method? Right?
     def run(self):
-        while not self.stopped():
-            try:
-                with self._driver as d:
-                    # Startup
-                    rst = m.ResetSystemMessage()
-                    d.write(rst)
-                    # Wait time for Stick to complete reset event
-                    sleep(0.6)
+        with self._driver as d:
+            while not self.stopped():
+                try:
+                    #  Write
+                    # Config messages should be sent in sequence. If
+                    # additions are made to config queue they should be
+                    # sent in a row.
+                    while not self._config.empty():
+                        self.send_message(self._config,
+                                          self._config_waiters,
+                                          d)
 
-                    while not self.stopped():
-                        #  Write
-                        # Config messages should be sent in sequence. If
-                        # additions are made to config queue they should be
-                        # sent in a row.
-                        while not self._config.empty():
-                            try:
-                                outMsg = self._config.get(block=False)
-                                d.write(outMsg)
-                                print(f'Message Sent: {outMsg}')
+                    # Otherwise messages are grabbed from the control queue
+                    self.send_message(self._control,
+                                      self._control_waiters,
+                                      d)
 
-                            except Empty:
-                                pass
+                    # Otherwise messages are grabbed from the tx queue
+                    self.send_message(self._tx, self._tx_waiters, d)
 
-                            except Exception as e:
-                                print(e)
+                    # Read
+                    try:
+                        msg = d.read(timeout=1)
+                        # Diagnostic Print Statements view incoming message
+                        # print(f'Message Recieved: {msg}')
+                        # print(f'Message Type: {msg.type}')
+                        # print(f'Waiter msg: {w[0]}')
+                        # print(f'Waiter msg type: {w[0].type}')
+                    except Empty:
+                        pass
 
-                            else:
-                                self._config_waiters.append((outMsg,
-                                                            outMsg.callback))
-
-                        # Otherwise messages are grabbed from the control queue
+                    else:
                         try:
-                            outMsg = self._control.get(block=False)
-                            print(f'Message Sent: {outMsg}')
-                            d.write(outMsg)
-
-                        except Empty:
-                            pass
+                            out = self.process_read_message(msg)
 
                         except Exception as e:
-                            print(e)
+                            raise e
 
                         else:
-                            self._control_waiters.append((outMsg,
-                                                         outMsg.callback))
+                            self._onSuccess(out)
 
-                        # Read
-                        try:
-                            msg = d.read(timeout=1)
-                            # Diagnostic Print Statements view incoming message
-                            # print(f'Message Recieved: {msg}')
-                            # print(f'Message Type: {msg.type}')
-                            # print(f'Waiter msg: {w[0]}')
-                            # print(f'Waiter msg type: {w[0].type}')
-                        except Empty:
-                            pass
+                except DriverException as e:
+                    print("Do we get here?")
+                    traceback.print_exc()
+                    self._onFailure(e)
+                    self.stop()
+                    raise e
 
-                        else:
-                            if msg.type == c.MESSAGE_CHANNEL_EVENT:
-                                # This is a response to our outgoing message
-                                for w in self._config_waiters:
-                                    if (w[0].type == msg.content[1] and
-                                            w[1] is not None):
-                                        self._onSuccess(w[1](msg, w[0].type))
-                                        self._config.task_done()
-                                        self._config_waiters.remove(w)
-                                        break
 
-                                for w in self._control_waiters:
-                                    if (w[0].type == msg.content[1] and
-                                            w[1] is not None):
-                                        self._onSuccess(w[1](msg, w[0].type))
-                                        self._control.task_done()
-                                        self._control_waiters.remove(w)
-                                        break
+                except Exception as e:
+                    traceback.print_exc()
+                    self._onFailure(e)
+                    self._out.put(e)
 
-                            elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
-                                bmsg = m.BroadcastMessage(msg.type,
-                                                          msg.content)
-                                bmsg = bmsg.build(msg.content)
-                                self._onSuccess(bmsg)
+        self._config_waiters.clear()
+        self._control_waiters.clear()
+        sleep(0.1)
 
-                            # Patrick's Stuff
-                            else:
-                                # Notification Messages
-                                if msg.type == c.MESSAGE_STARTUP:
-                                    msg = m.StartUpMessage(msg.content)
-                                    self._onSuccess(msg.callback(msg))
+    def send_message(self, queue: Queue, waiters, driver):
+        try:
+            outMsg = queue.get(block=False)
+            driver.write(outMsg)
+            # print(f'Message Sent: {outMsg}')
 
-                                elif msg.type == c.MESSAGE_SERIAL_ERROR:
-                                    # TODO: Implement custom exception classes
-                                    self._onFailure(msg)
+        except Empty:
+            pass
 
-                                elif msg.type == c.MESSAGE_CAPABILITIES:
-                                    for w in self._control_waiters:
-                                        if msg.type == w[0].reply_type:
-                                            self._control_waiters.remove(w)
-                                    msg = m.CapabilitiesMessage(msg.content)
-                                    self._control.task_done()
-                                    print(self._control.qsize())
-                                    self._out.put(msg)
-                                    self._out.join()
+        except Exception as e:
+            raise e
 
-                                # Messages from requested message pages
-                                else:
-                                    for w in self._control_waiters:
-                                        if msg.type == w[0].reply_type:
-                                            self._onSuccess(w[1](msg))
-                                            self._control_waiters.remove(w)
-                                            self._control.task_done()
-                                            break
+        else:
+            waiters.append((outMsg, outMsg.callback))
 
-            except Exception as e:
-                traceback.print_exc()
-                self._onFailure(e)
+    def process_read_message(self, msg):
+        if msg.type == c.MESSAGE_CHANNEL_EVENT:
+            # This is a response to our outgoing message
+            for w in self._config_waiters:
+                if w[0].type == msg.content[1] and w[1] is not None:
+                    try:
+                        out = w[1](msg, w[0].type)
+                    except Exception as e:
+                        raise e
+                    else:
+                        return out
+                    finally:
+                        self._config.task_done()
+                        self._config_waiters.remove(w)
+                    break
 
-            self._config_waiters.clear()
-            self._control_waiters.clear()
-            sleep(0.1)
+            for w in self._control_waiters:
+                if (w[0].type == msg.content[1] and
+                        w[1] is not None):
+                    try:
+                        out = w[1](msg, w[0].type)
+                    except Exception as e:
+                        raise e
+                    else:
+                        return out
+                    finally:
+                        self._control.task_done()
+                        self._control_waiters.remove(w)
+                    break
+
+            if msg.content[1] == c.MESSAGE_RF_EVENT:
+                # TODO: Encapsulate Event Msg Handler
+                try:
+                    out = m.process_event_code(msg.content[2])
+                except Exception as e:
+                    raise e
+                else:
+                    return out
+
+                finally:
+                    if (msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED or
+                       msg.content[2] == c.EVENT_TRANSFER_TX_FAILED):
+                        self._tx.task_done()
+                        self._tx_waiters.remove(w)
+
+                # else:
+                #     for w in self._tx_waiters:
+                #         # TODO: Implement tx success and failure
+                #         self._onSuccess(w[1](msg, c.MESSAGE_RF_EVENT))
+                #         self._tx.task_done()
+                #         self._tx_waiters.remove(w)
+                #         # TODO: Raise tx error code
+
+        elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
+            bmsg = m.BroadcastMessage(msg.type,
+                                      msg.content)
+            bmsg = bmsg.build(msg.content)
+            return out
+
+        # Patrick's Stuff
+        else:
+            # Notification Messages
+            if msg.type == c.MESSAGE_STARTUP:
+                msg = m.StartUpMessage(msg.content)
+                self._onSuccess(msg.callback(msg))
+                self._control.task_done()
+
+            elif msg.type == c.MESSAGE_SERIAL_ERROR:
+                self._onFailure(msg)
+                raise ex.SerialError()
+
+            elif msg.type == c.MESSAGE_CAPABILITIES:
+                for w in self._control_waiters:
+                    if msg.type == w[0].reply_type:
+                        self._control_waiters.remove(w)
+                msg = m.CapabilitiesMessage(msg.content)
+                self._control.task_done()
+                self._out.put(msg)
+                self._out.join()
+
+            # Messages from requested message pages
+            else:
+                for w in self._control_waiters:
+                    if msg.type == w[0].reply_type:
+                        self._control_waiters.remove(w)
+                        self._control.task_done()
+                        return(w[1](msg))
+
+                        break
 
 
 class Node:
@@ -182,12 +229,19 @@ class Node:
         self.config_messages = Queue()
         self.control_messages = Queue()
         self.outputs = Queue()
-        self.start(onSuccess, onFailure)
-        self.capabilities = self.get_capabilities(disp=False)
-        self.max_channels = self.capabilities["max_channels"]
-        self.max_networks = self.capabilities["max_networks"]
-        self.channels = [None]*self.max_channels
-        self.networks = [0]*self.max_networks
+        self.tx_messages = Queue()
+        self.channels = []
+        try:
+            self.start(onSuccess, onFailure)
+        except DriverException as e:
+            print("Exception Occured!")
+            raise e
+        else:
+            self.capabilities = self.get_capabilities(disp=False)
+            self.max_channels = self.capabilities["max_channels"]
+            self.max_networks = self.capabilities["max_networks"]
+            self.channels = [None]*self.max_channels
+            self.networks = [0]*self.max_networks
 
     def __enter__(self):
         return self
@@ -203,9 +257,11 @@ class Node:
                               self.config_messages,
                               self.control_messages,
                               self.outputs,
+                              self.tx_messages,
                               onSuccess,
                               onFailure)
             self._pump.start()
+            self.reset()
 
     def open_channel(self, channel_num: int = 0,
                      network_num: int = 0,
@@ -224,10 +280,9 @@ class Node:
         if network_num > self.max_networks or network_num < 0:
             print("Error: Network assignment exceeds device capabilities")
             return
-        
+
         if self.channels[channel_num] is not None:
             print("Error: Channel is already in use")
-
 
         if 'device' in kwargs:
             match kwargs.get('device'):
@@ -242,23 +297,46 @@ class Node:
                     channel_msg_freq = 4.06
 
         # Create channel object in node's channels list
-        self.channels[channel_num] = Channel(self.config_messages,
-                                             self.control_messages,
-                                             self.outputs,
-                                             channel_num,
-                                             network_num,
-                                             network_key,
-                                             channel_type,
-                                             device_type,
-                                             channel_frequency,
-                                             channel_msg_freq,
-                                             channel_search_timeout)
-        self.channels[channel_num].open()
+        try:
+            self.channels[channel_num] = Channel(self.config_messages,
+                                                 self.control_messages,
+                                                 self.outputs,
+                                                 channel_num,
+                                                 network_num,
+                                                 network_key,
+                                                 channel_type,
+                                                 device_type,
+                                                 channel_frequency,
+                                                 channel_msg_freq,
+                                                 channel_search_timeout)
+        except Exception as e:
+            raise e
+            return
+
+        try:
+            self.channels[channel_num].open()
+
+        except Exception as e:
+            raise e
+            return
 
     def close_channel(self, channel_num):
-        self.channels[channel_num].close()
-        del self.channels[channel_num]
-        # self.channels[channel_num] = None
+        try:
+            self.channels[channel_num].close()
+        except Exception as e:
+            raise e
+        else:
+            del self.channels[channel_num]
+            self.channels[channel_num] = None
+
+    def send_tx_msg(self, channel_num, **kwargs):
+        if 'grade' in kwargs:
+            # Grade input will be in percent
+            # Process percent value to ANT+ Count
+            grade_in = kwargs.get('grade')
+            grade_set = int((grade_in + 200) / 0.01)
+        self.tx_messages.put(m.AcknowledgedMessage(channel_num,
+                                                   grade=grade_set))
 
     # Depreciated
     def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,
@@ -285,6 +363,16 @@ class Node:
         if self._pump is None:
             return False
         return self._pump.is_alive()
+
+    def reset(self):
+        self.control_messages.put(m.ResetSystemMessage())
+        if self.channels == []:
+            return
+        else:
+            for x in self.channels:
+                if x is not None:
+                    del x
+            self.channels = [None]*self.max_channels
 
     def get_capabilities(self, disp=True):
         self.control_messages.put(m.RequestCapabilitiesMessage(), block=False)

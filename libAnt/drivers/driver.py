@@ -39,7 +39,11 @@ class Driver:
                 self._openTime = time.time()
                 if self._logger is not None:
                     self._logger.open()
-                self._open()
+                try:
+                    self._open()
+                except Exception as e:
+                    print(e)
+                    pass
 
     def close(self) -> None:
         with self._lock:

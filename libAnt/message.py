@@ -1,4 +1,5 @@
 import libAnt.constants as c
+import libAnt.exceptions as e
 
 
 class Message:
@@ -87,6 +88,7 @@ class Message:
 
         """
         if msg.type == c.MESSAGE_SERIAL_ERROR:
+            raise e.SerialError()
             return(SerialErrorMessage.disp_serial_error(msg))
         if not msg.type == c.MESSAGE_CHANNEL_EVENT:
             return(f"Error: Unexpected Message Type {hex(msg.type)}")
@@ -94,8 +96,8 @@ class Message:
             return(f"Error: Unexpected Message Type {hex(msg.type)}")
         if msg.content[2] == 0:
             return(f'Message Success. Type: {hex(msg_type)}')
-        # TODO: else:
-        #     return(process_error_code(msg.content[2]))
+        else:
+            return(process_event_code(msg.content[2]))
 
     @property
     def type(self) -> int:
@@ -456,7 +458,6 @@ class BroadcastMessage(Message):
         self.rx_timestamp = None
         self.channel = None
         self.ext_content = None
-
         super().__init__(type, content)
 
     def build(self, raw: bytes):
@@ -491,6 +492,27 @@ class BroadcastMessage(Message):
 
     def encode(self) -> bytes:
         pass
+
+
+class AcknowledgedMessage(Message):
+    """ANT Section 9.5.5.2 (0x4F)"""
+
+    def __init__(self, channel_num: int, **kwargs):
+        if 'grade' in kwargs:
+            pg_num = 0x33
+            byte1 = byte2 = byte3 = byte4 = 0xFF
+            content = bytearray([channel_num, pg_num, byte1,
+                                 byte2, byte3, byte4])
+            grade = kwargs.get('grade')
+            content.extend(int(grade).to_bytes(2, byteorder='big'))
+            C_RR = 0xFF
+            content.append(C_RR)
+
+        super().__init__(c.MESSAGE_CHANNEL_ACKNOWLEDGED_DATA,
+                         bytes(content))
+        self.reply_type = c.MESSAGE_RF_EVENT
+        self.source = 'Host'
+        self.callback = self.device_reply
 
 
 # %% Notification Messages
@@ -795,3 +817,23 @@ def bits_2_num(bit_array):
     int_value = int(bit_string, 2)
 
     return int_value
+
+
+def process_event_code(evt_code):
+    match evt_code:
+        case c.EVENT_RX_FAIL:
+            raise e.RxFail()
+
+        case c.EVENT_TRANSFER_TX_FAILED:
+            raise e.TxFail()
+
+        case c.INVALID_MESSAGE:
+            raise e.InvalidMessage()
+
+        case c.EVENT_CHANNEL_CLOSED:
+            return("Channel Close Success")
+
+        case c.EVENT_TRANSFER_TX_COMPLETED:
+            return("Tx Success")
+        case _:
+            return(evt_code)

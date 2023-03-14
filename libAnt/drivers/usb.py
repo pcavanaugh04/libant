@@ -27,6 +27,9 @@ class USBDriver(Driver):
         self._queue = None
         self._loop = None
         self._driver_open = False
+        self._dev = find(idVendor=self._idVendor, idProduct=self._idProduct)
+        if self._dev is None:
+            raise DriverException("Could not open specified device")
 
     def __str__(self):
         if self.isOpen():
@@ -73,7 +76,7 @@ class USBDriver(Driver):
                 if self._dev.is_kernel_driver_active(0):
                     try:
                         self._dev.detach_kernel_driver(0)
-                    except USBError as e:
+                    except USBError:
                         raise DriverException("Could not detach kernel driver")
             except NotImplementedError:
                 pass  # for non unix systems

@@ -21,12 +21,19 @@ def eCallback(e):
 # For USB driver
 # USBm sticks have pid=0x1009
 # USB2 sticks have pid=0x1008
-n = Node(USBDriver(vid=0x0FCF, pid=0x1008), callback, eCallback, 'MyNode')
-n.open_channel(channel_num=0, device='HR')
-sleep(5)
-n.get_capabilities()
-sleep(5)
-n.channels[0].close()
-sleep(5)
-sleep(0.5)  # Listen for 1sec
-n.stop()  # Close Node
+
+
+with Node(USBDriver(vid=0x0FCF, pid=0x1008),
+          callback,
+          eCallback,
+          'MyNode') as n:
+    # Try out some different ANT+ Profiles
+    # Heartrate: device='HR'
+    # Power Meter: device='PWR'
+    # Smart Trainer: device='FE-C'
+    n.open_channel(channel_num=0, device='HR')
+    sleep(2)
+    n.send_tx_msg(0, grade=0)
+    sleep(5)
+    n.channels[0].close()
+    sleep(1)
