@@ -31,21 +31,23 @@ with Node(USBDriver(vid=0x0FCF, pid=0x1008),
     # Smart Trainer: device='FE-C'
     channel = 0
     n.open_channel(channel_num=channel, device='FE-C')
+    sleep(5)
     # Wait for connection, read some messages
-    # TODO: Implement channel connection success capability
+    # TODO: Implement channel connection success notifier capability
     # Send user config
     cfg = p.set_user_config(channel)
     print(f'Sending Configuration Message: {cfg}')
-    n.send_tx_msg(cfg)
-    sleep(5)
+    status = n.send_tx_msg(cfg)
+    print(status)
     # Try sending grade change tx messages
-    for i in range(5):
-        msg = p.set_grade(channel, i)
+    success = True
+    while success:
+        msg = p.set_grade(channel, 1)
         print(f'Sending Grade Change Message: {cfg}')
-        n.send_tx_msg(msg)
+        success = n.send_tx_msg(msg)
+        # Wait for response
         sleep(1)
-    # Wait for response
-    sleep(5)
+        
     # Close Channel
     n.channels[0].close()
     sleep(1)

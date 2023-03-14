@@ -27,7 +27,6 @@ class Driver:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print("Do we get here?")
         self.close()
 
     def isOpen(self) -> bool:

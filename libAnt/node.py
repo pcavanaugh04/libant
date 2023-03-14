@@ -109,10 +109,15 @@ class Pump(threading.Thread):
                 except ex.RxFail as e:
                     self._onFailure(e)
 
+                except ex.TxFail as e:
+                    self._onFailure(e)
+                    self._tx.task_done()
+                    self._out.put(False)
+                    self._out.join()
+
                 except Exception as e:
                     traceback.print_exc()
                     self._onFailure(e)
-                    self._out.put(e)
 
         self._config_waiters.clear()
         self._control_waiters.clear()
@@ -173,15 +178,14 @@ class Pump(threading.Thread):
                     raise e
                 else:
                     return out
-
                 finally:
                     if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                         self._tx.task_done()
-                        self._out.put("Tx Success!")
-                        self._out.join()
-                    elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
-                        self._tx.task_done()
-                        raise ex.TxFail("Tx Failed!")
+                        self._out.put(True)
+                        pass
+                    # elif:
+                    #     msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
+
 
                         # TODO: Tie Tx messages in waiters back to the expected
                         # response.
