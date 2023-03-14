@@ -91,10 +91,12 @@ class Pump(threading.Thread):
                             out = self.process_read_message(msg)
 
                         except Exception as e:
+                            print(e)
                             raise e
 
                         else:
-                            self._onSuccess(out)
+                            if out is not None:
+                                self._onSuccess(out)
 
                 except DriverException as e:
                     print("Do we get here?")
@@ -102,7 +104,6 @@ class Pump(threading.Thread):
                     self._onFailure(e)
                     self.stop()
                     raise e
-
 
                 except Exception as e:
                     traceback.print_exc()
@@ -192,8 +193,8 @@ class Pump(threading.Thread):
             # Notification Messages
             if msg.type == c.MESSAGE_STARTUP:
                 msg = m.StartUpMessage(msg.content)
-                self._onSuccess(msg.callback(msg))
                 self._control.task_done()
+                return(msg.callback(msg))
 
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
                 self._onFailure(msg)
@@ -207,7 +208,8 @@ class Pump(threading.Thread):
                 self._control.task_done()
                 self._out.put(msg)
                 self._out.join()
-
+                return
+            
             # Messages from requested message pages
             else:
                 for w in self._control_waiters:

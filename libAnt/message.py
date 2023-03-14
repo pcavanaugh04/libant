@@ -544,7 +544,7 @@ class StartUpMessage(Message):
             start_str += '\tSYNCHRONOUS_RESET\n'
         if start_bits[7]:
             start_str += '\tSUSPEND_RESET\n'
-        return(start_str)
+        return(start_str.strip())
 
 
 class SerialErrorMessage(Message):
@@ -822,12 +822,17 @@ def bits_2_num(bit_array):
 def process_event_code(evt_code):
     match evt_code:
         case c.EVENT_RX_FAIL:
+            print("Eh?")
+
             raise e.RxFail()
 
         case c.EVENT_TRANSFER_TX_FAILED:
+            print("Eh?")
+
             raise e.TxFail()
 
         case c.INVALID_MESSAGE:
+            print("Eh?")
             raise e.InvalidMessage()
 
         case c.EVENT_CHANNEL_CLOSED:
