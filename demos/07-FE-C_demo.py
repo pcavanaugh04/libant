@@ -5,6 +5,7 @@ Created on Wed Mar  1 15:17:46 2023
 """
 
 from time import sleep
+from random import random
 
 from libAnt.drivers.usb import USBDriver
 from libAnt.node import Node
@@ -30,24 +31,27 @@ with Node(USBDriver(vid=0x0FCF, pid=0x1008),
           debug=False) as n:
     # Smart Trainer: device='FE-C'
     channel = 0
+
     n.open_channel(channel_num=channel, device='FE-C')
-    sleep(5)
-    # Wait for connection, read some messages
-    # TODO: Implement channel connection success notifier capability
+    # This is now a blocking function. The program will not progress until
+    # a connection is made
     # Send user config
     cfg = p.set_user_config(channel)
-    print(f'Sending Configuration Message: {cfg}')
     status = n.send_tx_msg(cfg)
-    print(status)
-    # Try sending grade change tx messages
+
+    # Send Grade change messages until one fails or user interrupt
     success = True
     while success:
-        msg = p.set_grade(channel, 1)
-        print(f'Sending Grade Change Message: {cfg}')
-        success = n.send_tx_msg(msg)
-        # Wait for response
-        sleep(1)
-        
+        try:
+            grade = random() * 20 - 10
+            msg = p.set_grade(channel, grade)
+            print(f'Sending Grade Change Message: {msg}')
+            success = n.send_tx_msg(msg)
+            # Wait for response
+            sleep(2)
+        except KeyboardInterrupt:
+            break
+
     # Close Channel
     n.channels[0].close()
     sleep(1)

@@ -659,7 +659,7 @@ class ChannelStatusMessage(Message):
         super().__init__(c.MESSAGE_CHANNEL_STATUS, content)
         self.channel_num = int(content[0])
         channel_status = bit_array(content[1])
-        match bits_2_num(channel_status[6:8]):
+        match bits_2_num(channel_status[0:2]):
             case 0:
                 self.channel_state = 'Un-Assigned'
             case 1:
@@ -668,11 +668,15 @@ class ChannelStatusMessage(Message):
                 self.channel_state = 'Searching'
             case 3:
                 self.channel_state = 'Tracking'
-        self.network_number = bits_2_num(channel_status[4:6])
-        self.channel_type = bits_2_num(channel_status[0:4])
+        self.network_number = bits_2_num(channel_status[2:4])
+        self.channel_type = bits_2_num(channel_status[4:])
+        self.status_dict = {'channel_number': self.channel_num,
+                            'channel_state': self.channel_state,
+                            'network_number': self.network_number,
+                            'channel_type': self.channel_type}
         self.source = 'ANT'
 
-    def disp_status(msg):
+    def disp_status(self, msg):
         if not msg.type == c.MESSAGE_CHANNEL_STATUS:
             return(f"Error: Unexpected Message Type {msg.type}")
 
@@ -699,7 +703,7 @@ class ChannelStatusMessage(Message):
         # Channel State
         status_str += f"\tChannel State: {status_msg.channel_state}\n"
 
-        return status_str
+        return status_str.strip()
 
 
 class ChannelIDMessage(Message):
@@ -718,8 +722,12 @@ class ChannelIDMessage(Message):
                                             byteorder='little')
         self.device_type = int(content[3])
         self.tx_type = bit_array(content[4])
+        self.id_dict = {'channel_number': self.channel_num,
+                        'device_number': self.device_number,
+                        'device_type': self.device_type,
+                        'tx_type': self.device_type}
 
-    def disp_ID(msg):
+    def disp_ID(self, msg):
         if not msg.type == c.MESSAGE_CHANNEL_ID:
             return(f"Error: Unexpected Message Type {msg.type}")
 
@@ -746,7 +754,7 @@ class ChannelIDMessage(Message):
             case 1:
                 id_str += "\tUses Global Data Pages: True\n"
 
-        return id_str
+        return id_str.strip()
 
 
 class SerialNumberMessage(Message):

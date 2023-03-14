@@ -41,15 +41,20 @@ class Pump(threading.Thread):
         self._onSuccess = onSuccess
         self._onFailure = onFailure
         self._debug = debug
+        self.first_message_flag = False
 
     def __enter__(self):  # Added by edyas 02/12/21
         return self
 
     def __exit__(self):  # Added by edyas 02/12/21
-        self.stop()
+        self.end()
 
-    def stop(self):
+    def end(self):
         self._driver.abort()
+        if not self._stopper.isSet():
+            self._stopper.set()
+
+    def pause(self):
         self._stopper.set()
 
     def stopped(self):
@@ -103,7 +108,7 @@ class Pump(threading.Thread):
                 except DriverException as e:
                     traceback.print_exc()
                     self._onFailure(e)
-                    self.stop()
+                    self.end()
                     raise e
 
                 except ex.RxFail as e:
@@ -127,6 +132,9 @@ class Pump(threading.Thread):
         try:
             outMsg = queue.get(block=False)
             driver.write(outMsg)
+            if outMsg.type == c.MESSAGE_SYSTEM_RESET:
+                # Wait for system to finish reset before doing anything
+                sleep(0.6)
 
         except Empty:
             pass
@@ -157,8 +165,7 @@ class Pump(threading.Thread):
                     break
 
             for w in self._control_waiters:
-                if (w[0].type == msg.content[1] and
-                        w[1] is not None):
+                if w[0].type == msg.content[1] and w[1] is not None:
                     try:
                         out = w[1](msg, w[0].type)
                     except Exception as e:
@@ -183,15 +190,12 @@ class Pump(threading.Thread):
                         self._tx.task_done()
                         self._out.put(True)
                         pass
-                    # elif:
-                    #     msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
-
-
-                        # TODO: Tie Tx messages in waiters back to the expected
-                        # response.
-                        # self._tx_waiters.remove(w)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
+            if not self.first_message_flag:
+                self._out.get()
+                self._out.task_done()
+                self.first_message_flag = True
             bmsg = m.BroadcastMessage(msg.type,
                                       msg.content)
             bmsg = bmsg.build(msg.content)
@@ -214,6 +218,26 @@ class Pump(threading.Thread):
                     if msg.type == w[0].reply_type:
                         self._control_waiters.remove(w)
                 msg = m.CapabilitiesMessage(msg.content)
+                self._control.task_done()
+                self._out.put(msg)
+                self._out.join()
+                return
+
+            elif msg.type == c.MESSAGE_CHANNEL_ID:
+                for w in self._control_waiters:
+                    if msg.type == w[0].reply_type:
+                        self._control_waiters.remove(w)
+                msg = m.ChannelIDMessage(msg.content)
+                self._control.task_done()
+                self._out.put(msg)
+                self._out.join()
+                return
+
+            elif msg.type == c.MESSAGE_CHANNEL_STATUS:
+                for w in self._control_waiters:
+                    if msg.type == w[0].reply_type:
+                        self._control_waiters.remove(w)
+                msg = m.ChannelStatusMessage(msg.content)
                 self._control.task_done()
                 self._out.put(msg)
                 self._out.join()
@@ -247,7 +271,7 @@ class Node:
         self.tx_messages = Queue()
         self.channels = []
         self.debug = debug
-        
+
         try:
             self.start(onSuccess, onFailure)
         except DriverException as e:
@@ -327,16 +351,24 @@ class Node:
                                                  channel_frequency,
                                                  channel_msg_freq,
                                                  channel_search_timeout)
-        except Exception as e:
-            raise e
-            return
-
-        try:
-            self.channels[channel_num].open()
 
         except Exception as e:
             raise e
             return
+
+        self.onSuccess(f"Channel {channel_num} Configuration Success!\n"
+                       f"Attempting to Open Channel {channel_num}...")
+        self.channels[channel_num].open()
+        self.onSuccess(f"Channel {channel_num} Open Success!\n"
+                       "Waiting until First message...")
+        self._pump.first_msg_flag = False
+        self.outputs.put("Blocking until First Message")
+        # TODO: This wont work if the channel times out
+        self.outputs.join()
+        self.onSuccess("First Message Recieved!\n"
+                       f"Idenfiying Channel {channel_num} Properties...")
+        self.channels[channel_num].id = self.get_channel_ID(channel_num)
+        self.channels[channel_num].status = self.get_channel_status(channel_num)
 
     def close_channel(self, channel_num):
         try:
@@ -353,7 +385,6 @@ class Node:
         msg_status = self.outputs.get()
         self.outputs.task_done()
         return(msg_status)
-        # TODO: Implement tx success/fail callbacks
 
     # Depreciated
     def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,
@@ -373,7 +404,7 @@ class Node:
 
     def stop(self):
         if self.isRunning():
-            self._pump.stop()
+            self._pump.end()
             self._pump.join()
 
     def isRunning(self):
@@ -398,18 +429,33 @@ class Node:
         self.outputs.task_done()
         cap_dict = cap_msg.capabilities_dict
         if disp:
-            print(cap_msg.disp_capabilities(cap_msg))
+            self.onSuccess(cap_msg.disp_capabilities(cap_msg))
         return cap_dict
 
-    def get_channel_status(self, channel_num: int):
+    def get_channel_status(self, channel_num: int, disp=True):
         # Not sure if this works
         self.control_messages.put(m.RequestChannelStatusMessage(channel_num),
                                   block=False)
+        self.control_messages.join()
+        stat_msg = self.outputs.get(block=True)
+        self.outputs.task_done()
+        stat_dict = stat_msg.status_dict
+        if disp:
+            self.onSuccess(stat_msg.disp_status(stat_msg))
+        return stat_dict
 
-    def get_channel_ID(self, channel_num: int):
+    def get_channel_ID(self, channel_num: int, disp=True):
         # Not sure if this works
         self.control_messages.put(m.RequestChannelIDMessage(channel_num),
                                   block=False)
+        self.control_messages.join()
+        id_msg = self.outputs.get(block=True)
+        id_dict = id_msg.id_dict
+        self.outputs.task_done()
+
+        if disp:
+            self.onSuccess(id_msg.disp_ID(id_msg))
+        return id_dict
 
     def get_ANT_serial_number(self):
         # Not sure if this works
@@ -495,6 +541,7 @@ class Channel:
 
     def open(self):
         self._ctrl.put(m.OpenChannelMessage(self.number))
+        self._ctrl.join()
 
     def close(self):
         self._ctrl.put(m.CloseChannelMessage(self.number))

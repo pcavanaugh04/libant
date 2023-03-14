@@ -26,13 +26,14 @@ def eCallback(e):
 with Node(USBDriver(vid=0x0FCF, pid=0x1008),
           callback,
           eCallback,
-          'MyNode') as n:
+          'MyNode',
+          debug=False) as n:
     # Try out some different ANT+ Profiles
     # Heartrate: device='HR'
     # Power Meter: device='PWR'
     # Smart Trainer: device='FE-C'
-    n.open_channel(channel_num=0, device='HR')
+    n.open_channel(channel_num=0, device='FE-C')
     # Wait for a connection and read if avaliable
-    sleep(30)
+    sleep(10)
     n.channels[0].close()
     sleep(1)
