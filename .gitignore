@@ -88,3 +88,7 @@ ENV/
 # Rope project settings
 .ropeproject
 .idea/
+demos/GUI/ant_UI.ui.bak
+demos/GUI/ant_UI.ui.bak1
+*.bak2
+demos/GUI/ant_UI.ui.bak3

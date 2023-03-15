@@ -11,16 +11,19 @@ import libAnt.constants as c
 class SerialError(Exception):
     def __init__(self, message=None):
         super().__init__(message)
+        self.message = message
 
 
 class RxFail(Exception):
     def __init__(self, message="Rx Fail"):
         super().__init__(message)
+        self.message = message
 
 
 class TxFail(Exception):
     def __init__(self, message="Tx Fail"):
         super().__init__(message)
+        self.message = message
 
 
 class RxSearchTimeout(Exception):

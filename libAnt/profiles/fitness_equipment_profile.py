@@ -6,12 +6,11 @@ import libAnt.message as m
 import libAnt.constants as c
 import libAnt.exceptions as e
 
-
 # %%FE-C Tx Messages
 class SetTrackResistancePage(m.AcknowledgedMessage):
     """ANT FE-C Section 8.10.2
 
-    Transmit user entered data relating to 
+    Transmit grade change request
     """
 
     def __init__(self, channel_num: int, grade: int, C_RR=0xFF):

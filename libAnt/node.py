@@ -256,8 +256,8 @@ class Pump(threading.Thread):
 
 class Node:
     def __init__(self, driver: Driver,
-                 onSuccess,
-                 onFailure,
+                 onSuccess=None,
+                 onFailure=None,
                  name: str = None,
                  debug=False):
         self._driver = driver
@@ -271,39 +271,39 @@ class Node:
         self.tx_messages = Queue()
         self.channels = []
         self.debug = debug
-
-        try:
-            self.start(onSuccess, onFailure)
-        except DriverException as e:
-            print("Exception Occured!")
-            raise e
-        else:
-            self.capabilities = self.get_capabilities(disp=False)
-            self.max_channels = self.capabilities["max_channels"]
-            self.max_networks = self.capabilities["max_networks"]
-            self.channels = [None]*self.max_channels
-            self.networks = [0]*self.max_networks
+        self.onSuccess = onSuccess
+        self.onFailure = onFailure
+        self.messages = []
 
     def __enter__(self):
+        self.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
 
-    def start(self, onSuccess, onFailure):
+    def start(self, onSuccess=None, onFailure=None):
+
         if not self.isRunning():
-            self.onSuccess = onSuccess
-            self.onFailure = onFailure
+            if onSuccess:
+                self.onSuccess = onSuccess
+            if onFailure:
+                self.onFailure = onFailure
             self._pump = Pump(self._driver,
                               self.config_messages,
                               self.control_messages,
                               self.outputs,
                               self.tx_messages,
-                              onSuccess,
-                              onFailure,
+                              self.onSuccess,
+                              self.onFailure,
                               self.debug)
             self._pump.start()
-            self.reset()
+        self.reset()
+        self.capabilities = self.get_capabilities(disp=False)
+        self.max_channels = self.capabilities["max_channels"]
+        self.max_networks = self.capabilities["max_networks"]
+        self.channels = [None]*self.max_channels
+        self.networks = [0]*self.max_networks
 
     def open_channel(self, channel_num: int = 0,
                      network_num: int = 0,
@@ -325,8 +325,9 @@ class Node:
 
         if self.channels[channel_num] is not None:
             print("Error: Channel is already in use")
+            return
 
-        if 'device' in kwargs:
+        if 'profile' in kwargs:
             match kwargs.get('device'):
                 case 'FE-C':
                     device_type = 17
@@ -353,7 +354,7 @@ class Node:
                                                  channel_search_timeout)
 
         except Exception as e:
-            raise e
+            self.onFailure(e)
             return
 
         self.onSuccess(f"Channel {channel_num} Configuration Success!\n"
