@@ -304,6 +304,7 @@ class Node:
         self.max_networks = self.capabilities["max_networks"]
         self.channels = [None]*self.max_channels
         self.networks = [0]*self.max_networks
+        return True
 
     def open_channel(self, channel_num: int = 0,
                      network_num: int = 0,
