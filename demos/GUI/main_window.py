@@ -19,18 +19,17 @@ class MainWindow(QMainWindow):
         # %% Load UI elements
         self.program_start_time = datetime.now()
 
-        # Initialize superclass
-        QMainWindow.__init__(self)
-        # Load the graphical layout
-        path = os.path.join(os.getcwd(), "GUI", "ant_UI.ui")
-        self.UI_elements = uic.loadUi(path, self)
-        print("Do We Get Here?")
-
         try:
             self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008), debug=False)
         except DriverException as e:
             print(e)
             return
+
+        # Initialize superclass
+        QMainWindow.__init__(self)
+        # Load the graphical layout
+        path = os.path.join(os.getcwd(), "GUI", "ant_UI.ui")
+        self.UI_elements = uic.loadUi(path, self)
 
         # Define Signal/Slot Relationship for emitting success and failure
         class HandlerObject(QObject):
@@ -55,14 +54,10 @@ class MainWindow(QMainWindow):
 
         self.obj.success_signal.connect(signal_handler)
         self.obj.failure_signal.connect(signal_handler)
-
-        start_thread = ANTWorker(self,
-                                 self.node.start,
-                                 self.obj.callback,
-                                 self.obj.error_callback)
-        start_thread.done_signal.connect(self.check_success)
-        start_thread.start()
-        # self.node.open_channel(0, profile='FE-C')
+        # Define avaliable Device Profiles
+        self.dev_profiles = ['FE-C', 'PWR', 'HR']
+        # Button Connections
+        self.open_channel_button.clicked.connect(self.open_channel)
 
     def check_success(self, success):
         if success:
@@ -74,6 +69,53 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         self.node.stop()
         event.accept()
+
+    def showEvent(self, event):
+        start_thread = ANTWorker(self,
+                                 self.node.start,
+                                 self.obj.callback,
+                                 self.obj.error_callback)
+        start_thread.done_signal.connect(self.device_startup)
+        start_thread.start()
+        event.accept()
+
+    def open_channel(self):
+        channel_num = int(self.channel_number_combo.currentText())
+        channel_profile = str(self.channel_profile_combo.currentText())
+        open_thread = ANTWorker(self,
+                                self.node.open_channel,
+                                channel_num,
+                                profile=channel_profile)
+        open_thread.done_signal.connect(self.channel_startup)
+        open_thread.start()
+        self.status_ch_number_combo.addItem(str(channel_num))
+
+    def device_startup(self, success):
+        if success:
+            # print(self.node._pump._driver._dev._product)
+            self.name_box.setText(str(self.node._pump._driver._dev._product))
+            self.serial_number_box.setText(str(self.node.serial_number))
+            self.max_channels_box.setText(str(self.node.max_channels))
+            self.max_networks_box.setText(str(self.node.max_networks))
+            ch_list = [str(i) for i in range(self.node.max_channels)]
+            self.channel_number_combo.addItems(ch_list)
+            self.channel_profile_combo.addItems(self.dev_profiles)
+        else:
+            self.message_viewer.append("Error in Device Startup! "
+                                       "Relaunch Program to try again")
+
+    def channel_startup(self, success):
+        if success:
+            ch_num = int(self.status_ch_number_combo.currentText())
+            ch = self.node.channels[ch_num]
+            self.channel_type_box.setText(str(ch.status.get("channel_type")))
+            self.network_number_box.setText(str(ch.status.get("network_number")))
+            self.device_id_box.setText(str(ch.id.get("device_number")))
+            self.device_type_box.setText(str(ch.id.get("device_type")))
+            self.channel_state_box.setText(str(ch.status.get("channel_state")))
+        else:
+            self.message_viewer.append("Error in Channel Startup! "
+                                       "Check Parameters and try again")
 
     @pyqtSlot()
     def returnPressedSlot():
@@ -95,12 +137,12 @@ class ANTWorker(QThread):
 
     done_signal = pyqtSignal(bool)
 
-    def __init__(self, parent, fn, *args):
+    def __init__(self, parent, fn, *args, **kwargs):
         super().__init__(parent=parent)
         self.run_function = fn
         self.args = args
-        # self.start()
+        self.kwargs = kwargs
 
     def run(self):
-        success = self.run_function(*self.args)
+        success = self.run_function(*self.args, **self.kwargs)
         self.done_signal.emit(success)

@@ -4,7 +4,8 @@ from threading import Event, Thread
 from usb import USBError, ENDPOINT_OUT, ENDPOINT_IN
 from usb.control import get_interface
 from usb.core import find
-from usb.util import find_descriptor, endpoint_direction, claim_interface, dispose_resources
+from usb.util import (find_descriptor, endpoint_direction, claim_interface,
+                      dispose_resources, get_string)
 
 from libAnt.drivers.driver import Driver, DriverException
 from libAnt.loggers.logger import Logger
@@ -70,6 +71,9 @@ class USBDriver(Driver):
 
             if self._dev is None:
                 raise DriverException("Could not open specified device")
+            else:
+                self._dev._product = get_string(self._dev, self._dev.iProduct)
+
 
             # Detach kernel driver
             try:

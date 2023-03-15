@@ -32,7 +32,7 @@ with Node(USBDriver(vid=0x0FCF, pid=0x1008),
     # Smart Trainer: device='FE-C'
     channel = 0
 
-    n.open_channel(channel_num=channel, device='FE-C')
+    n.open_channel(channel_num=channel, profile='FE-C')
     # This is now a blocking function. The program will not progress until
     # a connection is made
     # Send user config

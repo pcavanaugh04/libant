@@ -243,6 +243,16 @@ class Pump(threading.Thread):
                 self._out.join()
                 return
 
+            elif msg.type == c.MESSAGE_SERIAL_NUMBER:
+                for w in self._control_waiters:
+                    if msg.type == w[0].reply_type:
+                        self._control_waiters.remove(w)
+                msg = m.SerialNumberMessage(msg.content)
+                self._control.task_done()
+                self._out.put(msg)
+                self._out.join()
+                return
+
             # Messages from requested message pages
             else:
                 for w in self._control_waiters:
@@ -284,22 +294,25 @@ class Node:
 
     def start(self, onSuccess=None, onFailure=None):
 
-        if not self.isRunning():
-            if onSuccess:
-                self.onSuccess = onSuccess
-            if onFailure:
-                self.onFailure = onFailure
-            self._pump = Pump(self._driver,
-                              self.config_messages,
-                              self.control_messages,
-                              self.outputs,
-                              self.tx_messages,
-                              self.onSuccess,
-                              self.onFailure,
-                              self.debug)
-            self._pump.start()
+        if self.isRunning():
+            return True
+
+        if onSuccess:
+            self.onSuccess = onSuccess
+        if onFailure:
+            self.onFailure = onFailure
+        self._pump = Pump(self._driver,
+                          self.config_messages,
+                          self.control_messages,
+                          self.outputs,
+                          self.tx_messages,
+                          self.onSuccess,
+                          self.onFailure,
+                          self.debug)
+        self._pump.start()
         self.reset()
         self.capabilities = self.get_capabilities(disp=False)
+        self.serial_number = self.get_ANT_serial_number(disp=False)
         self.max_channels = self.capabilities["max_channels"]
         self.max_networks = self.capabilities["max_networks"]
         self.channels = [None]*self.max_channels
@@ -329,7 +342,7 @@ class Node:
             return
 
         if 'profile' in kwargs:
-            match kwargs.get('device'):
+            match kwargs.get('profile'):
                 case 'FE-C':
                     device_type = 17
 
@@ -356,7 +369,7 @@ class Node:
 
         except Exception as e:
             self.onFailure(e)
-            return
+            return False
 
         self.onSuccess(f"Channel {channel_num} Configuration Success!\n"
                        f"Attempting to Open Channel {channel_num}...")
@@ -371,6 +384,7 @@ class Node:
                        f"Idenfiying Channel {channel_num} Properties...")
         self.channels[channel_num].id = self.get_channel_ID(channel_num)
         self.channels[channel_num].status = self.get_channel_status(channel_num)
+        return True
 
     def close_channel(self, channel_num):
         try:
@@ -447,7 +461,6 @@ class Node:
         return stat_dict
 
     def get_channel_ID(self, channel_num: int, disp=True):
-        # Not sure if this works
         self.control_messages.put(m.RequestChannelIDMessage(channel_num),
                                   block=False)
         self.control_messages.join()
@@ -459,9 +472,15 @@ class Node:
             self.onSuccess(id_msg.disp_ID(id_msg))
         return id_dict
 
-    def get_ANT_serial_number(self):
-        # Not sure if this works
+    def get_ANT_serial_number(self, disp=True):
         self.control_messages.put(m.RequestSerialNumberMessage(), block=False)
+        self.control_messages.join()
+        sn_msg = self.outputs.get(block=True)
+        sn = sn_msg.serial_number
+        self.outputs.task_done()
+        if disp:
+            self.onSuccess(sn_msg.disp_SN(sn_msg))
+        return sn
 
     # Depreciated. Saved for docstring
     def pair_FEC_channel(self, network_key=c.ANTPLUS_NETWORK_KEY,
