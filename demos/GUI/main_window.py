@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
         self.dev_profiles = ['FE-C', 'PWR', 'HR']
         # Button Connections
         self.open_channel_button.clicked.connect(self.open_channel)
+        self.close_channel_button.clicked.connect(self.close_channel)
 
     def check_success(self, success):
         if success:
@@ -80,15 +81,15 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def open_channel(self):
-        channel_num = int(self.channel_number_combo.currentText())
+        self.channel_add_num = int(self.channel_number_combo.currentText())
         channel_profile = str(self.channel_profile_combo.currentText())
+        # self.thread_parent = QObject()
         open_thread = ANTWorker(self,
                                 self.node.open_channel,
-                                channel_num,
+                                self.channel_add_num,
                                 profile=channel_profile)
         open_thread.done_signal.connect(self.channel_startup)
         open_thread.start()
-        self.status_ch_number_combo.addItem(str(channel_num))
 
     def device_startup(self, success):
         if success:
@@ -106,8 +107,8 @@ class MainWindow(QMainWindow):
 
     def channel_startup(self, success):
         if success:
-            ch_num = int(self.status_ch_number_combo.currentText())
-            ch = self.node.channels[ch_num]
+            self.status_ch_number_combo.addItem(str(self.channel_add_num))
+            ch = self.node.channels[self.channel_add_num]
             self.channel_type_box.setText(str(ch.status.get("channel_type")))
             self.network_number_box.setText(str(ch.status.get("network_number")))
             self.device_id_box.setText(str(ch.id.get("device_number")))
@@ -116,6 +117,29 @@ class MainWindow(QMainWindow):
         else:
             self.message_viewer.append("Error in Channel Startup! "
                                        "Check Parameters and try again")
+
+    def close_channel(self):
+        channel_num = int(self.status_ch_number_combo.currentText())
+        self.combo_remove_index = self.status_ch_number_combo.currentIndex()
+        close_thread = ANTWorker(self,
+                                 self.node.close_channel,
+                                 channel_num)
+        close_thread.done_signal.connect(self.channel_remove)
+        close_thread.start()
+
+    def channel_remove(self, success):
+        if success:
+            self.status_ch_number_combo.removeItem(self.combo_remove_index)
+            self.channel_type_box.clear()
+            self.network_number_box.clear()
+            self.device_id_box.clear()
+            self.device_type_box.clear()
+            self.channel_state_box.clear()
+        else:
+            self.message_viewer.append("Error in Channel Close! "
+                                       "Check Parameters and try again")
+        # del self.thread_parent
+        # del self.close_thread
 
     @pyqtSlot()
     def returnPressedSlot():

@@ -391,9 +391,11 @@ class Node:
             self.channels[channel_num].close()
         except Exception as e:
             raise e
+            return False
         else:
             del self.channels[channel_num]
             self.channels[channel_num] = None
+            return True
 
     def send_tx_msg(self, msg):
         self.tx_messages.put(msg)

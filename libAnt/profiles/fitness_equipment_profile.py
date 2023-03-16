@@ -6,6 +6,7 @@ import libAnt.message as m
 import libAnt.constants as c
 import libAnt.exceptions as e
 
+
 # %%FE-C Tx Messages
 class SetTrackResistancePage(m.AcknowledgedMessage):
     """ANT FE-C Section 8.10.2
