@@ -189,7 +189,10 @@ class Pump(threading.Thread):
                     if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                         self._tx.task_done()
                         self._out.put(True)
-                        pass
+
+                    elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
+                        self._tx.task_done()
+                        self._out.put(False)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
             if not self.first_message_flag:
@@ -400,9 +403,9 @@ class Node:
     def send_tx_msg(self, msg):
         self.tx_messages.put(msg)
         self.tx_messages.join()
-        msg_status = self.outputs.get()
+        msg_success = self.outputs.get()
         self.outputs.task_done()
-        return(msg_status)
+        return msg_success
 
     # Depreciated
     def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,
@@ -424,6 +427,7 @@ class Node:
         if self.isRunning():
             self._pump.end()
             self._pump.join()
+        return True
 
     def isRunning(self):
         if self._pump is None:

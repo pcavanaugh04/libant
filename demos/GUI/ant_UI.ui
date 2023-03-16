@@ -774,7 +774,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QLineEdit" name="name_box_3">
+            <widget class="QLineEdit" name="grade_box">
              <property name="autoFillBackground">
               <bool>false</bool>
              </property>
@@ -795,7 +795,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QLineEdit" name="name_box_4">
+            <widget class="QLineEdit" name="crr_box">
              <property name="autoFillBackground">
               <bool>false</bool>
              </property>
@@ -884,7 +884,11 @@
         </widget>
        </item>
        <item>
-        <widget class="QTextEdit" name="message_viewer"/>
+        <widget class="QTextEdit" name="message_viewer">
+         <property name="readOnly">
+          <bool>true</bool>
+         </property>
+        </widget>
        </item>
       </layout>
      </widget>

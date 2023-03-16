@@ -97,7 +97,7 @@ def set_user_config(channel_num,
     return config_msg
 
 
-def set_grade(channel_num, grade_in):
+def set_grade(channel_num, grade=0, crr=0.004):
     """
     Set grade on trainer
 
@@ -114,7 +114,7 @@ def set_grade(channel_num, grade_in):
         Formatted message object to be sent to device
     """
 
-    grade_set = int((grade_in + 200) / 0.01)
+    grade_set = int((grade + 200) / 0.01)
     grade_msg = SetTrackResistancePage(channel_num, grade=grade_set)
     return(grade_msg)
 

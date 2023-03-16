@@ -11,6 +11,8 @@ from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import USBDriver, DriverException
+import functools
+import libAnt.profiles.fitness_equipment_profile as p
 
 
 class MainWindow(QMainWindow):
@@ -59,6 +61,8 @@ class MainWindow(QMainWindow):
         # Button Connections
         self.open_channel_button.clicked.connect(self.open_channel)
         self.close_channel_button.clicked.connect(self.close_channel)
+        self.user_config_button.clicked.connect(self.send_usr_cfg)
+        self.track_resistance_button.clicked.connect(self.send_grade_msg)
 
     def check_success(self, success):
         if success:
@@ -68,7 +72,8 @@ class MainWindow(QMainWindow):
             print("Operation Failed!")
 
     def closeEvent(self, event):
-        self.node.stop()
+        end_thread = ANTWorker(self, self.node.stop)
+        end_thread.start()
         event.accept()
 
     def showEvent(self, event):
@@ -138,8 +143,69 @@ class MainWindow(QMainWindow):
         else:
             self.message_viewer.append("Error in Channel Close! "
                                        "Check Parameters and try again")
-        # del self.thread_parent
-        # del self.close_thread
+
+    def send_usr_cfg(self):
+        cfg_boxes = [self.rider_weight_box, self.wheel_offset_box,
+                     self.bike_weight_box, self.wheel_diameter_box,
+                     self.gear_ratio_box]
+        cfg_keys = ['user_weight', 'wheel_diameter_offset', 'bike_weight',
+                    'bike_wheel_diameter', 'gear_ratio']
+        cfg_dict = {}
+        for i, box in enumerate(cfg_boxes):
+            try:
+                usr_in = int(box.text())
+            except ValueError:
+                pass
+            else:
+                cfg_dict[cfg_keys[i]] = usr_in
+
+        try:
+            channel = int(self.status_ch_number_combo.currentText())
+        except ValueError:
+            self.message_viewer.append('Error: Channel must be selected to '
+                                       'send user configuration message!')
+            return
+
+        cfg = p.set_user_config(channel, **cfg_dict)
+        self.send_tx_msg(cfg)
+
+    def send_grade_msg(self):
+        grade_boxes = [self.grade_box, self.crr_box]
+        grade_keys = ['grade', 'wheel_diameter_offset', 'bike_weight',
+                    'bike_wheel_diameter', 'gear_ratio']
+        grade_dict = {}
+        for i, box in enumerate(grade_boxes):
+            try:
+                usr_in = int(box.text())
+            except ValueError:
+                pass
+            else:
+                grade_dict[grade_keys[i]] = usr_in
+
+        try:
+            channel = int(self.status_ch_number_combo.currentText())
+        except ValueError:
+            self.message_viewer.append('Error: Channel must be selected to '
+                                       'send user configuration message!')
+            return
+
+        grade = p.set_grade(channel, **grade_dict)
+        self.send_tx_msg(grade)
+
+    def send_tx_msg(self, msg):
+        tx_thread = ANTWorker(self,
+                              self.node.send_tx_msg,
+                              msg)
+        tx_thread.done_signal.connect(functools.partial(self.tx_msg_status,
+                                                        msg))
+        tx_thread.start()
+
+    def tx_msg_status(self, success, msg):
+        if success:
+            pass
+        else:
+            self.send_tx_msg(msg)
+
 
     @pyqtSlot()
     def returnPressedSlot():
