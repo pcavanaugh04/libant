@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from libAnt.core import lazyproperty
-from libAnt.profiles.profile import ProfileMessage
-import libAnt.message as m 
+import libAnt.message as m
 import libAnt.constants as c
 import libAnt.exceptions as e
+from datetime import datetime
 
 
 # %%FE-C Tx Messages
@@ -19,8 +19,9 @@ class SetTrackResistancePage(m.AcknowledgedMessage):
         byte1 = byte2 = byte3 = byte4 = 0xFF
         content = bytearray([pg_num, byte1,
                              byte2, byte3, byte4])
-        content.extend(int(grade).to_bytes(2, byteorder='big'))
+        content.extend(int(grade).to_bytes(2, byteorder='little'))
         content.append(C_RR)
+        print(content)
         super().__init__(channel_num, content)
 
 
@@ -37,7 +38,7 @@ class UserConfigurationPage(m.AcknowledgedMessage):
                  bike_wheel_diameter=0xFF,
                  gear_ratio=0x00):
         pg_num = c.PAGE_USER_CONFIGURATION
-        weight_bytes = (int(user_weight).to_bytes(2, byteorder='big'))
+        weight_bytes = (int(user_weight).to_bytes(2, byteorder='little'))
         byte3 = 0xFF
         offset_bits = bin(int(wheel_diameter_offset))[2:]
         bike_weight_bits = bin(int(bike_weight))[2:].zfill(12)
@@ -119,24 +120,33 @@ def set_grade(channel_num, grade=0, crr=0.004):
     return(grade_msg)
 
 
-class FitnessEquipmentProfileMessage(ProfileMessage):
-    """ Message from Specific Trainer / Stationary Bike """
+class TrainerDataPage:
+#class TrainerDataPage(m.BroadcastMessage):
+    """ANT FE-C Section 8.6.7 (0x19)
+    Message from Specific Trainer / Stationary Bike """
 
-    maxAccumulatedPower = 65536
-    maxEventCount = 256
+    max_accumulated_power = 65536
+    max_event = 256
+
+    def __init__(self, msg: m.BroadcastMessage, prev):
+        self.msg = msg
+        if self.page_number != 0x19:
+            return ("Error: Unrecognized Page Type!")
+        self.previous = prev
+        self.timestamp = datetime.now()
 
     def __str__(self):
         return super().__str__() + ' Power: {0:.0f}W'.format(self.averagePower)
 
     @lazyproperty
-    def dataPageNumber(self):
+    def page_number(self):
         """
         :return: Data Page Number (int)
         """
         return self.msg.content[0]
 
     @lazyproperty
-    def eventCount(self):
+    def event(self):
         """
         The update event count field is incremented each time the information in the message is updated.
         There are no invalid values for update event count.
@@ -146,7 +156,7 @@ class FitnessEquipmentProfileMessage(ProfileMessage):
         return self.msg.content[1]
 
     @lazyproperty
-    def instantaneousCadence(self):
+    def inst_cadence(self):
         """
         The instantaneous cadence field is used to transmit the pedaling cadence recorded from the power sensor.
         This field is an instantaneous value only; it does not accumulate between messages.
@@ -155,7 +165,7 @@ class FitnessEquipmentProfileMessage(ProfileMessage):
         return self.msg.content[2]
 
     @lazyproperty
-    def accumulatedPower(self):
+    def accumulated_power(self):
         """
         Accumulated power is the running sum of the instantaneous power data and is incremented at each update
         of the update event count. The accumulated power field rolls over at 65.535kW.
@@ -164,33 +174,36 @@ class FitnessEquipmentProfileMessage(ProfileMessage):
         return (self.msg.content[4] << 8) | self.msg.content[3]
 
     @lazyproperty
-    def instantaneousPower(self):
+    def inst_power(self):
         """ Instantaneous power (W) """
-        return ((bin(self.msg.content[6]) & bin(240)) << 8) | self.msg.content[5]
-        # come back and check here
+        LSB_bits = [int(y) for y in bin(self.msg.content[5])[2:].zfill(8)[-8:]]
+        MSN_bits = [int(y) for y in bin(self.msg.content[6])[2:].zfill(4)[-4:]]
+        LSB = m.bits_2_num(LSB_bits)
+        MSN = m.bits_2_num(MSN_bits)
+        return (MSN << 8) | LSB
 
     @lazyproperty
-    def accumulatedPowerDiff(self):
+    def accumulated_pwr_diff(self):
         if self.previous is None:
             return None
-        elif self.accumulatedPower < self.previous.accumulatedPower:
+        elif self.accumulated_power < self.previous.accumulated_power:
             # Rollover
-            return (self.accumulatedPower - self.previous.accumulatedPower) + self.maxAccumulatedPower
+            return (self.accumulated_power - self.previous.accumulated_power) + self.max_accumulated_power
         else:
-            return self.accumulatedPower - self.previous.accumulatedPower
+            return self.accumulated_power - self.previous.accumulated_power
 
     @lazyproperty
-    def eventCountDiff(self):
+    def event_diff(self):
         if self.previous is None:
             return None
-        elif self.eventCount < self.previous.eventCount:
+        elif self.event < self.previous.event:
             # Rollover
-            return (self.eventCount - self.previous.eventCount) + self.maxEventCount
+            return (self.event - self.previous.event) + self.max_event
         else:
-            return self.eventCount - self.previous.eventCount
+            return self.event - self.previous.event
 
     @lazyproperty
-    def averagePower(self):
+    def avg_power(self):
         """
         Under normal conditions with complete RF reception, average power equals instantaneous power.
         In conditions where packets are lost, average power accurately calculates power over the interval
@@ -198,8 +211,8 @@ class FitnessEquipmentProfileMessage(ProfileMessage):
         :return: Average power (Watts)
         """
         if self.previous is None:
-            return self.instantaneousPower
-        if self.eventCount == self.previous.eventCount:
-            return self.instantaneousPower
-        return self.accumulatedPowerDiff / self.eventCountDiff
+            return self.inst_power
+        if self.event == self.previous.event:
+            return self.inst_power
+        return self.accumulated_pwr_diff / self.event_diff
 

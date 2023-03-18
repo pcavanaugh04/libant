@@ -48,8 +48,16 @@ class MainWindow(QMainWindow):
                 self.failure_signal.emit(emsg)
 
         self.obj = HandlerObject()
+        self.trainer_msgs = [None]
 
         def signal_handler(msg):
+            if hasattr(msg, 'build') and int(msg.content[0]) == 0x19:
+                trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
+                self.trainer_msgs.append(trainer_msg)
+                self.power_box.setText(str(trainer_msg.inst_power))
+                self.event_box.setText(str(trainer_msg.event))
+                self.avg_power_box.setText(str(trainer_msg.avg_power))
+
             msg = str(msg)
             self.node.messages.append(msg)
             self.message_viewer.append(msg)
