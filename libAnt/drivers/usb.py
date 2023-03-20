@@ -69,6 +69,7 @@ class USBDriver(Driver):
         print('USB OPEN START')
         try:
             # find the first USB device that matches the filter
+            libusb0_backend = libusb0.get_backend()
             self._dev = find(backend=libusb0_backend, idVendor=self._idVendor, idProduct=self._idProduct)
 
             if self._dev is None:
