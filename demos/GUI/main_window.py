@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
         self.program_start_time = datetime.now()
 
         try:
-            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008), debug=False)
+            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1009), debug=False)
         except DriverException as e:
             print(e)
             return

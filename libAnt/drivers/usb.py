@@ -3,6 +3,7 @@ from threading import Event, Thread
 
 from usb import USBError, ENDPOINT_OUT, ENDPOINT_IN
 from usb.control import get_interface
+import usb.backend.libusb0 as libusb0
 from usb.core import find
 from usb.util import (find_descriptor, endpoint_direction, claim_interface,
                       dispose_resources, get_string)
@@ -28,7 +29,8 @@ class USBDriver(Driver):
         self._queue = None
         self._loop = None
         self._driver_open = False
-        self._dev = find(idVendor=self._idVendor, idProduct=self._idProduct)
+        libusb0_backend = libusb0.get_backend()
+        self._dev = find(backend=libusb0_backend, idVendor=self._idVendor, idProduct=self._idProduct)
         if self._dev is None:
             raise DriverException("Could not open specified device")
 
