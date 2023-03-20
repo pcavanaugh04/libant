@@ -149,6 +149,37 @@ class Pump(threading.Thread):
             waiters.append((outMsg, outMsg.callback))
 
     def process_read_message(self, msg):
+
+        # Control Message Responses
+        for w in self._control_waiters:
+            # Requested Response Messages
+            if w[0].type == c.MESSAGE_CHANNEL_REQUEST:
+                if w[0].content[1] == msg.type:
+                    try:
+                        msg = w[1](msg.content)
+                    except Exception as e:
+                        raise e
+                    finally:
+                        self._control.task_done()
+                        self._control_waiters.remove(w)
+                        self._out.put(msg)
+                        self._out.join()
+
+            # Channel Event Messages in response to control messages
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
+                  w[0].type == msg.content[1] and
+                  w[1] is not None):
+                try:
+                    out = w[1](msg, w[0].type)
+                except Exception as e:
+                    raise e
+                else:
+                    return out
+                finally:
+                    self._control.task_done()
+                    self._control_waiters.remove(w)
+                break
+
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
             # This is a response to our outgoing message
             for w in self._config_waiters:
@@ -164,35 +195,21 @@ class Pump(threading.Thread):
                         self._config_waiters.remove(w)
                     break
 
-            for w in self._control_waiters:
-                if w[0].type == msg.content[1] and w[1] is not None:
-                    try:
-                        out = w[1](msg, w[0].type)
-                    except Exception as e:
-                        raise e
-                    else:
-                        return out
-                    finally:
-                        self._control.task_done()
-                        self._control_waiters.remove(w)
-                    break
-
+            # msg.content[1] == c.MESSAGE_RF_EVENT:
+            try:
+                out = m.process_event_code(msg.content[2])
+            except Exception as e:
+                raise e
             else:
-                # msg.content[1] == c.MESSAGE_RF_EVENT:
-                try:
-                    out = m.process_event_code(msg.content[2])
-                except Exception as e:
-                    raise e
-                else:
-                    return out
-                finally:
-                    if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
-                        self._tx.task_done()
-                        self._out.put(True)
+                return out
+            finally:
+                if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
+                    self._tx.task_done()
+                    self._out.put(True)
 
-                    elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
-                        self._tx.task_done()
-                        self._out.put(False)
+                elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
+                    self._tx.task_done()
+                    self._out.put(False)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
             if not self.first_message_flag:
@@ -215,56 +232,6 @@ class Pump(threading.Thread):
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
                 self._onFailure(msg)
                 raise ex.SerialError()
-
-            elif msg.type == c.MESSAGE_CAPABILITIES:
-                for w in self._control_waiters:
-                    if msg.type == w[0].reply_type:
-                        self._control_waiters.remove(w)
-                msg = m.CapabilitiesMessage(msg.content)
-                self._control.task_done()
-                self._out.put(msg)
-                self._out.join()
-                return
-
-            elif msg.type == c.MESSAGE_CHANNEL_ID:
-                for w in self._control_waiters:
-                    if msg.type == w[0].reply_type:
-                        self._control_waiters.remove(w)
-                msg = m.ChannelIDMessage(msg.content)
-                self._control.task_done()
-                self._out.put(msg)
-                self._out.join()
-                return
-
-            elif msg.type == c.MESSAGE_CHANNEL_STATUS:
-                for w in self._control_waiters:
-                    if msg.type == w[0].reply_type:
-                        self._control_waiters.remove(w)
-                msg = m.ChannelStatusMessage(msg.content)
-                self._control.task_done()
-                self._out.put(msg)
-                self._out.join()
-                return
-
-            elif msg.type == c.MESSAGE_SERIAL_NUMBER:
-                for w in self._control_waiters:
-                    if msg.type == w[0].reply_type:
-                        self._control_waiters.remove(w)
-                msg = m.SerialNumberMessage(msg.content)
-                self._control.task_done()
-                self._out.put(msg)
-                self._out.join()
-                return
-
-            # Messages from requested message pages
-            else:
-                for w in self._control_waiters:
-                    if msg.type == w[0].reply_type:
-                        self._control_waiters.remove(w)
-                        self._control.task_done()
-                        return(w[1](msg))
-
-                        break
 
 
 class Node:
@@ -479,7 +446,8 @@ class Node:
         return id_dict
 
     def get_ANT_serial_number(self, disp=True):
-        self.control_messages.put(m.RequestSerialNumberMessage(), block=False)
+        self.control_messages.put(m.RequestSerialNumberMessage(),
+                                  block=False)
         self.control_messages.join()
         sn_msg = self.outputs.get(block=True)
         sn = sn_msg.serial_number

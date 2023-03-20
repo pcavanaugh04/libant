@@ -418,7 +418,7 @@ class RequestCapabilitiesMessage(RequestMessage):
     def __init__(self):
         content = bytearray([0, c.MESSAGE_CAPABILITIES])
         super().__init__(content)
-        self.callback = CapabilitiesMessage.disp_capabilities
+        self.callback = CapabilitiesMessage
         self.reply_type = c.MESSAGE_CAPABILITIES
 
 
@@ -426,7 +426,7 @@ class RequestChannelStatusMessage(RequestMessage):
     def __init__(self, channel_num: int):
         content = bytearray([channel_num, c.MESSAGE_CHANNEL_STATUS])
         super().__init__(content)
-        self.callback = ChannelStatusMessage.disp_status
+        self.callback = ChannelStatusMessage
         self.reply_type = c.MESSAGE_CHANNEL_STATUS
 
 
@@ -434,7 +434,7 @@ class RequestChannelIDMessage(RequestMessage):
     def __init__(self, channel_num: int):
         content = bytearray([channel_num, c.MESSAGE_CHANNEL_ID])
         super().__init__(content)
-        self.callback = ChannelIDMessage.disp_ID
+        self.callback = ChannelIDMessage
         self.reply_type = c.MESSAGE_CHANNEL_ID
 
 
@@ -442,7 +442,7 @@ class RequestSerialNumberMessage(RequestMessage):
     def __init__(self):
         content = bytearray([0, c.MESSAGE_SERIAL_NUMBER])
         super().__init__(content)
-        self.callback = SerialNumberMessage.disp_SN
+        self.callback = SerialNumberMessage
         self.reply_type = c.MESSAGE_SERIAL_NUMBER
 
 
