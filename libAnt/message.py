@@ -318,7 +318,7 @@ class ResetSystemMessage(Message):
         super().__init__(c.MESSAGE_SYSTEM_RESET, bytes([0]))
         self.reply_type = c.MESSAGE_STARTUP
         self.source = 'Host'
-        self.callback = StartUpMessage.disp_startup
+        self.callback = StartUpMessage
 
 
 class OpenChannelMessage(Message):
@@ -449,6 +449,13 @@ class RequestSerialNumberMessage(RequestMessage):
 # %% Data Messages
 
 class BroadcastMessage(Message):
+    """ANT Section 9.5.5.1
+
+    Braodcast messages are one-way, un-acknowledged data packets sent across a
+    channel. The data payload is 8 bytes and can be configred to contain
+    extended fields.
+    """
+
     def __init__(self, type: int, content: bytes):
         self.flag = None
         self.device_number = self.device_type = self.tx_type = None
@@ -461,6 +468,25 @@ class BroadcastMessage(Message):
         super().__init__(type, content)
 
     def build(self, raw: bytes):
+        """Construct broadcast message to a standard format.
+
+        The build method extracts information from the broadcast message object
+        and reformats the object into a standard, 8byte payload. This method
+        can process extended data packets.
+
+        Parameters
+        ----------
+        raw : bytes
+            A 9 byte array consisting of channel number raw[0] and message
+            content raw[1:9]
+
+        Returns
+        -------
+        self
+            returns an updated version of the broadcast message object for
+            assignment
+
+        """
         self._type = c.MESSAGE_CHANNEL_BROADCAST_DATA
         self.channel = raw[0]
         self._content = raw[1:9]
@@ -498,7 +524,9 @@ class AcknowledgedMessage(Message):
     """ANT Section 9.5.5.2 (0x4F)
 
     Send from master or slave to recieving node when the success or failure of
-    a message needs to be known
+    a message needs to be known. This message is sometimes used by different
+    device profiles to configure content and share control information from
+    slave to master devices.
     """
 
     def __init__(self, channel_num, content: bytes):
@@ -520,10 +548,19 @@ class StartUpMessage(Message):
         self.source = 'ANT'
         self.callback = self.disp_startup
 
-    def disp_startup(self, msg):
-        if not msg.type == c.MESSAGE_STARTUP:
-            return(f"Error: Unexpected Message Type {msg.type}")
-        start_bits = bit_array(msg.content[0])
+    def disp_startup(self):
+        """Display startup message from device with associated start-up codes
+
+        This method can be chosed to be printed to the success callback where
+        it is called.
+
+        Returns
+        -------
+        start_str : str
+            Formatted message for display
+
+        """
+        start_bits = bit_array(self.content[0])
         start_str = 'Device Startup Successful. Reset type:\n'
         if start_bits[0]:
             start_str += '\tHARDWARE_RESET_LINE\n'
@@ -535,7 +572,7 @@ class StartUpMessage(Message):
             start_str += '\tSYNCHRONOUS_RESET\n'
         if start_bits[7]:
             start_str += '\tSUSPEND_RESET\n'
-        return(start_str.strip())
+        return start_str.strip()
 
 
 class SerialErrorMessage(Message):

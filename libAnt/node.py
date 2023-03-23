@@ -225,13 +225,13 @@ class Pump(threading.Thread):
         else:
             # Notification Messages
             if msg.type == c.MESSAGE_STARTUP:
-                msg = m.StartUpMessage(msg.content)
+                start_msg = m.StartUpMessage(msg.content)
                 self._control.task_done()
-                return(msg.callback(msg))
+                return(start_msg.disp_startup())
 
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
-                self._onFailure(msg)
-                raise ex.SerialError()
+                self._control.task_done()
+                raise ex.SerialError(msg.content)
 
 
 class Node:
