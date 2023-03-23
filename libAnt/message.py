@@ -612,8 +612,6 @@ class CapabilitiesMessage(Message):
     contains summary of ANT device capabilities. See ANT Document for full
     implementation
     """
-    # TODO: Add capabilities request and unpack to thread start to enforce
-    # Input checking (channel numbers and network numbers)
 
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CAPABILITIES, content)
@@ -795,6 +793,11 @@ class ChannelIDMessage(Message):
 
 
 class SerialNumberMessage(Message):
+    """ANT Section 9.5.7.5 (0x61)
+
+    Return device 4-byte serial number upon request
+    """
+
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_SERIAL_NUMBER, content)
         x = b''
