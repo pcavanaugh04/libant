@@ -7,7 +7,6 @@ program to track and handle failure events within a try-except structure.
 @author: patri
 """
 # import libAnt.constants as c
-from libAnt.message import Message, SerialErrorMessage
 
 
 class SerialError(Exception):
@@ -17,7 +16,8 @@ class SerialError(Exception):
     The data portion of this message may be used to debug the USB packet.
     """
 
-    def __init__(self, msg: Message):
+    def __init__(self, msg):
+        from libAnt.message import SerialErrorMessage
         err_msg = SerialErrorMessage.disp_serial_error(msg)
         super().__init__(err_msg)
         self.message = err_msg
@@ -60,7 +60,7 @@ class RxSearchTimeout(Exception):
         pass
 
 
-# Exceptions to Be implemented 
+# Exceptions to Be implemented
 class ChannelInWrongState(Exception):
     def init(self):
         pass
@@ -94,4 +94,3 @@ class InvalidNetworkNumber(Exception):
 class SerialQueueOverflow(Exception):
     def init(self):
         pass
-    
