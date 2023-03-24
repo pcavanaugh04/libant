@@ -548,7 +548,7 @@ class StartUpMessage(Message):
         self.source = 'ANT'
         self.callback = self.disp_startup
 
-    def disp_startup(self):
+    def disp_startup(self, msg):
         """Display startup message from device with associated start-up codes
 
         This method can be chosed to be printed to the success callback where
@@ -638,7 +638,7 @@ class CapabilitiesMessage(Message):
                 case 'std_options':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_NO_RECEIVE_CHANNELS: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_NO_TRANSMIT_CHANNELS: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_NO_TRANSMIT_CHANNELS: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_NO_RECEIVE_MESSAGES: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_NO_TRANSMIT_MESSAGES: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_NO_ACKD_MESSAGES: {bool(value[4])}\n'
@@ -647,7 +647,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_NETWORK_ENABLED: {bool(value[1])}\n'
-                                f'\t\tCAPABILITIES_SERIAL_NUMBER_ENABLED: {bool(value[3])}\n' 
+                                f'\t\tCAPABILITIES_SERIAL_NUMBER_ENABLED: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_PER_CHANNEL_TX_POWER_ENABLED: {bool(value[4])}\n'
                                 f'\t\tCAPABILITIES_LOW_PRIORITY_SEARCH_ENABLED: {bool(value[5])}\n'
                                 f'\t\tCAPABILITIES_SCRIPT_ENABLED: {bool(value[6])}\n'
@@ -656,7 +656,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options2':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_LED_ENABLED: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_EXT_MESSAGE_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_EXT_MESSAGE_ENABLED: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_SCAN_MODE_ENABLED: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_PROX_SEARCH_ENABLED: {bool(value[4])}\n'
                                 f'\t\tCAPABILITIES_EXT_ASSIGN_ENABLED: {bool(value[5])}\n'
@@ -666,7 +666,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options3':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_ADVANCED_BURST_ENABLED: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_EVENT_BUFFERING_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_EVENT_BUFFERING_ENABLED: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_EVENT_FILTERING_ENABLED: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_HIGH_DUTY_SEARCH_ENABLED: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_SEARCH_SHARING_ENABLED: {bool(value[4])}\n'
@@ -806,7 +806,7 @@ class SerialNumberMessage(Message):
         self.serial_number = int.from_bytes(x, byteorder='little')
         self.source = 'ANT'
 
-    def disp_SN(msg):
+    def disp_SN(self, msg):
         if not msg.type == c.MESSAGE_SERIAL_NUMBER:
             return(f"Error: Unexpected Message Type {msg.type}")
 
