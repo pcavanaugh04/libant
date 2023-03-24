@@ -28,7 +28,7 @@ with Node(USBDriver(vid=0x0FCF, pid=0x1008),
           callback,
           eCallback,
           'MyNode',
-          debug=False) as n:
+          debug=True) as n:
     # Smart Trainer: device='FE-C'
     channel = 0
 

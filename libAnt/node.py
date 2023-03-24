@@ -30,7 +30,7 @@ class Pump(threading.Thread):
 
     Attributes
     ----------
-    
+
     Methods
     -------
     run()
@@ -43,6 +43,7 @@ class Pump(threading.Thread):
         Encapsulated function for processing recieved messages, executing
         necessary callbacks, and raising errors when necessary
     """
+
     def __init__(self, driver: Driver,
                  config_queue: Queue,
                  control_queue: Queue,
@@ -97,77 +98,75 @@ class Pump(threading.Thread):
 
 # Theres gotta be a better way to organize this run method? Right?
     def run(self):
-        d = self._driver
+        with self._driver as d:
+            while not self.stopped():
+                if self.paused():
+                    sleep(0.1)
+                    pass
+                else:
+                    try:
+                        #  Write
+                        # Config messages should be sent in sequence. If
+                        # additions are made to config queue they should be
+                        # sent in a row.
+                        while not self._config.empty():
+                            self.send_message(self._config,
+                                              self._config_waiters,
+                                              d)
 
-        while not self.stopped():
-            if self.paused:
-                sleep(0.1)
-                pass
-            else:
-                try:
-                    #  Write
-                    # Config messages should be sent in sequence. If
-                    # additions are made to config queue they should be
-                    # sent in a row.
-                    while not self._config.empty():
-                        self.send_message(self._config,
-                                          self._config_waiters,
+                        # Otherwise messages are grabbed from the control queue
+                        self.send_message(self._control,
+                                          self._control_waiters,
                                           d)
 
-                    # Otherwise messages are grabbed from the control queue
-                    self.send_message(self._control,
-                                      self._control_waiters,
-                                      d)
+                        # Otherwise messages are grabbed from the tx queue
+                        self.send_message(self._tx, self._tx_waiters, d)
 
-                    # Otherwise messages are grabbed from the tx queue
-                    self.send_message(self._tx, self._tx_waiters, d)
-
-                    # Read
-                    try:
-                        msg = d.read(timeout=1)
-                        # Diagnostic Print Statements view incoming message
-                        if self._debug:
-                            print(f'Message Recieved: {msg}')
-                            # print(f'Message Type: {msg.type}')
-                            # print(f'Waiter msg: {w[0]}')
-                            # print(f'Waiter msg type: {w[0].type}')
-                    except Empty:
-                        pass
-
-                    else:
+                        # Read
                         try:
-                            out = self.process_read_message(msg)
-
-                        except Exception as e:
-                            raise e
+                            msg = d.read(timeout=1)
+                            # Diagnostic Print Statements view incoming message
+                            if self._debug:
+                                print(f'Message Recieved: {msg}')
+                                # print(f'Message Type: {msg.type}')
+                                # print(f'Waiter msg: {w[0]}')
+                                # print(f'Waiter msg type: {w[0].type}')
+                        except Empty:
+                            pass
 
                         else:
-                            if out is not None:
-                                self._onSuccess(out)
+                            try:
+                                out = self.process_read_message(msg)
 
-                except DriverException as e:
-                    traceback.print_exc()
-                    self._onFailure(e)
-                    self.end()
-                    raise e
+                            except Exception as e:
+                                raise e
 
-                except ex.RxFail as e:
-                    self._onFailure(e)
+                            else:
+                                if out is not None:
+                                    self._onSuccess(out)
 
-                except ex.TxFail as e:
-                    self._onFailure(e)
-                    self._tx.task_done()
-                    self._out.put(False)
-                    self._out.join()
+                    except DriverException as e:
+                        traceback.print_exc()
+                        self._onFailure(e)
+                        self.stop()
+                        raise e
 
-                except Exception as e:
-                    traceback.print_exc()
-                    self._onFailure(e)
+                    except ex.RxFail as e:
+                        self._onFailure(e)
+
+                    except ex.TxFail as e:
+                        self._onFailure(e)
+                        self._tx.task_done()
+                        self._out.put(False)
+                        self._out.join()
+
+                    except Exception as e:
+                        traceback.print_exc()
+                        self._onFailure(e)
 
         self._config_waiters.clear()
         self._control_waiters.clear()
         self._tx_waiters.clear()
-        d.abort()
         sleep(0.1)
 
     def send_message(self, queue: Queue, waiters, driver):
@@ -269,7 +268,7 @@ class Pump(threading.Thread):
             if msg.type == c.MESSAGE_STARTUP:
                 start_msg = m.StartUpMessage(msg.content)
                 self._control.task_done()
-                return(start_msg.disp_startup())
+                return(start_msg.disp_startup(msg))
 
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
                 self._control.task_done()
@@ -395,7 +394,8 @@ class Node:
         self.onSuccess("First Message Recieved!\n"
                        f"Idenfiying Channel {channel_num} Properties...")
         self.channels[channel_num].id = self.get_channel_ID(channel_num)
-        self.channels[channel_num].status = self.get_channel_status(channel_num)
+        self.channels[channel_num].status = self.get_channel_status(
+            channel_num)
         return True
 
     def close_channel(self, channel_num):
@@ -434,7 +434,7 @@ class Node:
 
     def stop(self):
         if self.isRunning():
-            self._pump.end()
+            self._pump.stop()
             self._pump.join()
         return True
 

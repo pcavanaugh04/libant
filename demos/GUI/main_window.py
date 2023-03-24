@@ -22,10 +22,19 @@ class MainWindow(QMainWindow):
         self.program_start_time = datetime.now()
 
         try:
-            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1009), debug=False)
-        except DriverException as e:
-            print(e)
-            return
+            # Try Opening Node with PID corresponding to ANT USB-m device
+            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1009),
+                             debug=False)
+
+        except DriverException:
+            try:
+                # If failed, try with PID corresponding to ANT USB-2 device
+                self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008),
+                                 debug=False)
+            except DriverException as e:
+                # If this fails, the device is probably not plugged in
+                print(e)
+                return
 
         # Initialize superclass
         QMainWindow.__init__(self)
@@ -123,7 +132,8 @@ class MainWindow(QMainWindow):
             self.status_ch_number_combo.addItem(str(self.channel_add_num))
             ch = self.node.channels[self.channel_add_num]
             self.channel_type_box.setText(str(ch.status.get("channel_type")))
-            self.network_number_box.setText(str(ch.status.get("network_number")))
+            self.network_number_box.setText(
+                str(ch.status.get("network_number")))
             self.device_id_box.setText(str(ch.id.get("device_number")))
             self.device_type_box.setText(str(ch.id.get("device_type")))
             self.channel_state_box.setText(str(ch.status.get("channel_state")))
@@ -180,7 +190,7 @@ class MainWindow(QMainWindow):
     def send_grade_msg(self):
         grade_boxes = [self.grade_box, self.crr_box]
         grade_keys = ['grade', 'wheel_diameter_offset', 'bike_weight',
-                    'bike_wheel_diameter', 'gear_ratio']
+                      'bike_wheel_diameter', 'gear_ratio']
         grade_dict = {}
         for i, box in enumerate(grade_boxes):
             try:
@@ -213,7 +223,6 @@ class MainWindow(QMainWindow):
             pass
         else:
             self.send_tx_msg(msg)
-
 
     @pyqtSlot()
     def returnPressedSlot():
