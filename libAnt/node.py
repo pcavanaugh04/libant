@@ -10,6 +10,8 @@ import traceback
 
 
 class Network:
+    """Define network object for shared, private communication"""
+
     def __init__(self, key: bytes = b'\x00' * 8, name: str = None):
         self.key = key
         self.name = name
@@ -20,6 +22,28 @@ class Network:
 
 
 class Pump(threading.Thread):
+    """Encapsulate device read/write functions for use in external thread
+
+    Pump object recieves messages from queues configured at the node level and
+    sends queued messages to the connected ANT device using a thread-safe usb
+    driver. Therefore multiple pump objects can reference the same USB device.
+
+    Attributes
+    ----------
+
+    Methods
+    -------
+    run()
+        Characteristic of any thread object containing the code to be executed
+        when the thread begins
+    send_message(queue, waiter, driver)
+        Encapsulated function for extracting message from queues and adding
+        necessary waiter content
+    process_read_message(msg)
+        Encapsulated function for processing recieved messages, executing
+        necessary callbacks, and raising errors when necessary
+    """
+
     def __init__(self, driver: Driver,
                  config_queue: Queue,
                  control_queue: Queue,
@@ -30,6 +54,7 @@ class Pump(threading.Thread):
                  debug):
         super().__init__()
         self._stopper = threading.Event()
+        self._pauser = threading.Event()
         self._driver = driver
         self._config = config_queue
         self._control = control_queue
@@ -49,13 +74,24 @@ class Pump(threading.Thread):
     def __exit__(self):  # Added by edyas 02/12/21
         self.end()
 
-    def end(self):
-        self._driver.abort()
+    def stop(self):
         if not self._stopper.isSet():
             self._stopper.set()
 
     def pause(self):
-        self._stopper.set()
+        if self.paused():
+            return
+        else:
+            self._pauser.set()
+
+    def resume(self):
+        if not self.paused():
+            return
+        else:
+            self._pauser.clear()
+
+    def paused(self):
+        return self._pauser.isSet()
 
     def stopped(self):
         return self._stopper.isSet()
@@ -64,68 +100,73 @@ class Pump(threading.Thread):
     def run(self):
         with self._driver as d:
             while not self.stopped():
-                try:
-                    #  Write
-                    # Config messages should be sent in sequence. If
-                    # additions are made to config queue they should be
-                    # sent in a row.
-                    while not self._config.empty():
-                        self.send_message(self._config,
-                                          self._config_waiters,
+                if self.paused():
+                    sleep(0.1)
+                    pass
+                else:
+                    try:
+                        #  Write
+                        # Config messages should be sent in sequence. If
+                        # additions are made to config queue they should be
+                        # sent in a row.
+                        while not self._config.empty():
+                            self.send_message(self._config,
+                                              self._config_waiters,
+                                              d)
+
+                        # Otherwise messages are grabbed from the control queue
+                        self.send_message(self._control,
+                                          self._control_waiters,
                                           d)
 
-                    # Otherwise messages are grabbed from the control queue
-                    self.send_message(self._control,
-                                      self._control_waiters,
-                                      d)
+                        # Otherwise messages are grabbed from the tx queue
+                        self.send_message(self._tx, self._tx_waiters, d)
 
-                    # Otherwise messages are grabbed from the tx queue
-                    self.send_message(self._tx, self._tx_waiters, d)
-
-                    # Read
-                    try:
-                        msg = d.read(timeout=1)
-                        # Diagnostic Print Statements view incoming message
-                        if self._debug:
-                            print(f'Message Recieved: {msg}')
-                            # print(f'Message Type: {msg.type}')
-                            # print(f'Waiter msg: {w[0]}')
-                            # print(f'Waiter msg type: {w[0].type}')
-                    except Empty:
-                        pass
-
-                    else:
+                        # Read
                         try:
-                            out = self.process_read_message(msg)
-
-                        except Exception as e:
-                            raise e
+                            msg = d.read(timeout=1)
+                            # Diagnostic Print Statements view incoming message
+                            if self._debug:
+                                print(f'Message Recieved: {msg}')
+                                # print(f'Message Type: {msg.type}')
+                                # print(f'Waiter msg: {w[0]}')
+                                # print(f'Waiter msg type: {w[0].type}')
+                        except Empty:
+                            pass
 
                         else:
-                            if out is not None:
-                                self._onSuccess(out)
+                            try:
+                                out = self.process_read_message(msg)
 
-                except DriverException as e:
-                    traceback.print_exc()
-                    self._onFailure(e)
-                    self.end()
-                    raise e
+                            except Exception as e:
+                                raise e
 
-                except ex.RxFail as e:
-                    self._onFailure(e)
+                            else:
+                                if out is not None:
+                                    self._onSuccess(out)
 
-                except ex.TxFail as e:
-                    self._onFailure(e)
-                    self._tx.task_done()
-                    self._out.put(False)
-                    self._out.join()
+                    except DriverException as e:
+                        traceback.print_exc()
+                        self._onFailure(e)
+                        self.stop()
+                        raise e
 
-                except Exception as e:
-                    traceback.print_exc()
-                    self._onFailure(e)
+                    except ex.RxFail as e:
+                        self._onFailure(e)
+
+                    except ex.TxFail as e:
+                        self._onFailure(e)
+                        self._tx.task_done()
+                        self._out.put(False)
+                        self._out.join()
+
+                    except Exception as e:
+                        traceback.print_exc()
+                        self._onFailure(e)
 
         self._config_waiters.clear()
         self._control_waiters.clear()
+        self._tx_waiters.clear()
         sleep(0.1)
 
     def send_message(self, queue: Queue, waiters, driver):
@@ -225,13 +266,13 @@ class Pump(threading.Thread):
         else:
             # Notification Messages
             if msg.type == c.MESSAGE_STARTUP:
-                msg = m.StartUpMessage(msg.content)
+                start_msg = m.StartUpMessage(msg.content)
                 self._control.task_done()
-                return(msg.callback(msg))
+                return(start_msg.disp_startup(msg))
 
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
-                self._onFailure(msg)
-                raise ex.SerialError()
+                self._control.task_done()
+                raise ex.SerialError(msg.content)
 
 
 class Node:
@@ -393,7 +434,7 @@ class Node:
 
     def stop(self):
         if self.isRunning():
-            self._pump.end()
+            self._pump.stop()
             self._pump.join()
         return True
 
