@@ -296,20 +296,20 @@ class Node:
                      device_type=0,
                      channel_frequency=2457,
                      channel_msg_freq=4,
-                     channel_search_timeout=30,
+                     channel_search_timeout=10,
                      **kwargs):
         # Some input checking
         if channel_num > self.max_channels or channel_num < 0:
             print("Error: Channel assignment exceeds device capabilities")
-            return
+            return False
 
         if network_num > self.max_networks or network_num < 0:
             print("Error: Network assignment exceeds device capabilities")
-            return
+            return False
 
         if self.channels[channel_num] is not None:
             print("Error: Channel is already in use")
-            return
+            return False
 
         if 'profile' in kwargs:
             match kwargs.get('profile'):
@@ -353,7 +353,8 @@ class Node:
         self.onSuccess("First Message Recieved!\n"
                        f"Idenfiying Channel {channel_num} Properties...")
         self.channels[channel_num].id = self.get_channel_ID(channel_num)
-        self.channels[channel_num].status = self.get_channel_status(channel_num)
+        self.channels[channel_num].status = self.get_channel_status(
+            channel_num)
         return True
 
     def close_channel(self, channel_num):
