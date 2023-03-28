@@ -186,12 +186,13 @@ class Pump(threading.Thread):
         else:
             if self._debug:
                 print(f'Message Sent: {outMsg}')
-
+                print("Do we get here?")
             waiters.append((outMsg, outMsg.callback))
 
     def process_read_message(self, msg):
 
         # Control Message Responses
+
         for w in self._control_waiters:
             # Requested Response Messages
             if w[0].type == c.MESSAGE_CHANNEL_REQUEST:
@@ -207,18 +208,24 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
-                  w[0].type == msg.content[1] and
-                  w[1] is not None):
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
+                  and w[0].type == msg.content[1]
+                  and w[1] is not None):
                 try:
+                    print("Do we get here?")
                     out = w[1](msg, w[0].type)
                 except Exception as e:
                     raise e
                 else:
                     return out
                 finally:
-                    self._control.task_done()
-                    self._control_waiters.remove(w)
+                    # Special case for
+                    if msg.content[1] == 1 and msg.content[2] == 7:
+                        break
+                    else:
+                        print(list(self._control.queue))
+                        self._control.task_done()
+                        self._control_waiters.remove(w)
                 break
 
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
@@ -238,6 +245,7 @@ class Pump(threading.Thread):
 
             # msg.content[1] == c.MESSAGE_RF_EVENT:
             try:
+                print("What about here?")
                 out = m.process_event_code(msg.content[2])
             except Exception as e:
                 raise e
@@ -273,6 +281,8 @@ class Pump(threading.Thread):
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
                 self._control.task_done()
                 raise ex.SerialError(msg.content)
+
+            print("Do we get here?")
 
 
 class Node:
@@ -326,8 +336,8 @@ class Node:
         self.serial_number = self.get_ANT_serial_number(disp=False)
         self.max_channels = self.capabilities["max_channels"]
         self.max_networks = self.capabilities["max_networks"]
-        self.channels = [None]*self.max_channels
-        self.networks = [0]*self.max_networks
+        self.channels = [None] * self.max_channels
+        self.networks = [0] * self.max_networks
         return True
 
     def open_channel(self, channel_num: int = 0,
@@ -451,7 +461,7 @@ class Node:
             for x in self.channels:
                 if x is not None:
                     del x
-            self.channels = [None]*self.max_channels
+            self.channels = [None] * self.max_channels
 
     def get_capabilities(self, disp=True):
         self.control_messages.put(m.RequestCapabilitiesMessage(), block=False)
@@ -582,3 +592,6 @@ class Channel:
 
     def close(self):
         self._ctrl.put(m.CloseChannelMessage(self.number))
+        self._ctrl.join()
+        self._cfg.put(m.UnassignChannelMessage(self.number))
+        self._cfg.join()

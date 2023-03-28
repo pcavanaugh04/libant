@@ -62,7 +62,10 @@ class RxSearchTimeout(Exception):
 
 # Exceptions to Be implemented
 class ChannelInWrongState(Exception):
-    def init(self):
+    def init(self, msg):
+        message = ("Error: Channel in Wrong State for Message"
+                   f"Type: {msg.type}")
+        super().__init__(message)
         pass
 
 

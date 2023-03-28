@@ -39,8 +39,8 @@ class Message:
             Formatted message containing message type and content.
 
         """
-        return ('({:02X}): '.format(self._type) +
-                ' '.join('{:02X}'.format(x) for x in self._content))
+        return ('({:02X}): '.format(self._type)
+                + ' '.join('{:02X}'.format(x) for x in self._content))
 
     def checksum(self) -> int:
         """Create checksum byte to ensure message is recieved properly.
@@ -97,7 +97,7 @@ class Message:
         if msg.content[2] == 0:
             return(f'Message Success. Type: {hex(msg_type)}')
         else:
-            return(process_event_code(msg.content[2]))
+            return(process_event_code(msg, msg.content[2]))
 
     @property
     def type(self) -> int:
@@ -177,7 +177,7 @@ class SetChannelIdMessage(Message):
                  tx_type: int = 0):
         content = bytearray([channel])
         content.extend(device_number.to_bytes(2, byteorder='little'))
-        content.append(int(pairing_bit)*128 + int(device_type))
+        content.append(int(pairing_bit) * 128 + int(device_type))
         content.append(tx_type)
         super().__init__(c.MESSAGE_CHANNEL_ID, bytes(content))
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -209,7 +209,8 @@ class ChannelMessagingPeriodMessage(Message):
 
         """
         content = bytearray([channel])
-        content.extend(int(1/frequency*32768).to_bytes(2, byteorder='little'))
+        content.extend(
+            int(1 / frequency * 32768).to_bytes(2, byteorder='little'))
         super().__init__(c.MESSAGE_CHANNEL_PERIOD, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
@@ -238,7 +239,7 @@ class ChannelSearchTimeoutMessage(Message):
         None
 
         """
-        content = bytes([channel, int(timeout/2.5)])
+        content = bytes([channel, int(timeout / 2.5)])
         super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
@@ -752,8 +753,8 @@ class ChannelIDMessage(Message):
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CHANNEL_ID, content)
         self.channel_num = int(content[0])
-        self.device_number = int.from_bytes((content[1].to_bytes(1, 'little') +
-                                            content[2].to_bytes(1, 'little')),
+        self.device_number = int.from_bytes((content[1].to_bytes(1, 'little')
+                                            + content[2].to_bytes(1, 'little')),
                                             byteorder='little')
         self.device_type = int(content[3])
         self.tx_type = bit_array(content[4])
@@ -858,7 +859,7 @@ def bits_2_num(bit_array):
     return int_value
 
 
-def process_event_code(evt_code):
+def process_event_code(msg, evt_code):
     match evt_code:
         case c.EVENT_RX_FAIL:
             raise e.RxFail()
@@ -877,6 +878,12 @@ def process_event_code(evt_code):
 
         case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
             raise(e.MessageSizeExceedsLimit())
+
+        case c.EVENT_RX_SEARCH_TIMEOUT:
+            raise(e.RxSearchTimeout())
+
+        case c.CHANNEL_IN_WRONG_STATE:
+            raise(e.ChannelInWrongState(msg))
 
         case _:
             return(f"Warning: Event Code not yet implemented for :{evt_code}")

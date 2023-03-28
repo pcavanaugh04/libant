@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
             try:
                 # If failed, try with PID corresponding to ANT USB-2 device
                 self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008),
-                                 debug=False)
+                                 debug=True)
             except DriverException as e:
                 # If this fails, the device is probably not plugged in
                 print(e)
