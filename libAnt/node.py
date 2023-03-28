@@ -186,7 +186,6 @@ class Pump(threading.Thread):
         else:
             if self._debug:
                 print(f'Message Sent: {outMsg}')
-                print("Do we get here?")
             waiters.append((outMsg, outMsg.callback))
 
     def process_read_message(self, msg):
@@ -208,24 +207,18 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
-                  and w[0].type == msg.content[1]
-                  and w[1] is not None):
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
+                  w[0].type == msg.content[1] and
+                  w[1] is not None):
                 try:
-                    print("Do we get here?")
                     out = w[1](msg, w[0].type)
                 except Exception as e:
                     raise e
                 else:
                     return out
                 finally:
-                    # Special case for
-                    if msg.content[1] == 1 and msg.content[2] == 7:
-                        break
-                    else:
-                        print(list(self._control.queue))
-                        self._control.task_done()
-                        self._control_waiters.remove(w)
+                    self._control.task_done()
+                    self._control_waiters.remove(w)
                 break
 
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
@@ -245,13 +238,20 @@ class Pump(threading.Thread):
 
             # msg.content[1] == c.MESSAGE_RF_EVENT:
             try:
-                print("What about here?")
-                out = m.process_event_code(msg.content[2])
+                out = m.process_event_code(msg, msg.content[2])
             except Exception as e:
                 raise e
             else:
                 return out
             finally:
+                # Special Case for Channel Close Confirmation message
+                if (msg.content[1] == c.MESSAGE_RF_EVENT
+                        and msg.content[2] == c.EVENT_CHANNEL_CLOSED):
+                    self._out.get()
+                    self._out.task_done()
+                    # This works for 1 channel handling at a time...
+                    self.first_message_flag = False
+
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                     self._tx.task_done()
                     self._out.put(True)
@@ -281,8 +281,6 @@ class Pump(threading.Thread):
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
                 self._control.task_done()
                 raise ex.SerialError(msg.content)
-
-            print("Do we get here?")
 
 
 class Node:
@@ -593,5 +591,7 @@ class Channel:
     def close(self):
         self._ctrl.put(m.CloseChannelMessage(self.number))
         self._ctrl.join()
-        self._cfg.put(m.UnassignChannelMessage(self.number))
-        self._cfg.join()
+        self._out.put("Temp String")
+        self._out.join()
+        self._cfig.put(m.UnassignChannelMessage(self.number))
+        self._cfig.join()
