@@ -87,9 +87,9 @@ def set_user_config(channel_num,
         Formatted message object to be sent to device
     """
     usr_wt_set = int(user_weight / 0.01)
-    bike_weight_set = int(bike_weight/0.05)
-    bike_wheel_d_set = int(bike_wheel_diameter*0.1)
-    gear_ratio_set = int(gear_ratio/0.03)
+    bike_weight_set = int(bike_weight / 0.05)
+    bike_wheel_d_set = int(bike_wheel_diameter * 0.1)
+    gear_ratio_set = int(gear_ratio / 0.03)
     config_msg = UserConfigurationPage(channel_num,
                                        user_weight=usr_wt_set,
                                        bike_weight=bike_weight_set,
@@ -120,8 +120,47 @@ def set_grade(channel_num, grade=0, crr=0.004):
     return(grade_msg)
 
 
+class GeneralFEDataPage:
+    """ANT FE-C Section 8.5.2 (0x10)
+
+    Main data page for all ANT+ fitness equipment devices
+    """
+
+    def __init__(self, msg: m.BroadcastMessage):
+        self.msg = msg
+        if self.page_number != 0x10:
+            return ("Error: Unrecognized Page Type For FE Data Page!")
+        self.timestamp = datetime.now()
+
+    @lazyproperty
+    def equipment_type(self):
+        """
+        Indicate equipment type
+        """
+        return self.msg.content[1]
+
+    @lazyproperty
+    def elapsed_time(self):
+        """
+        Accumulated time in resolution
+        """
+        return self.msg.content[2]
+
+    @lazyproperty
+    def distance_traveled(self):
+        """Accumulated Distance """
+        return self.msg.content[3]
+
+    @lazyproperty
+    def speed(self):
+        """Instantaneous speed of unit"""
+        LSB = self.msg.content[4]
+        MSB = self.msg.content[5]
+        return (MSB << 8) | LSB
+
+
 class TrainerDataPage:
-#class TrainerDataPage(m.BroadcastMessage):
+    # class TrainerDataPage(m.BroadcastMessage):
     """ANT FE-C Section 8.6.7 (0x19)
     Message from Specific Trainer / Stationary Bike """
 
@@ -215,4 +254,3 @@ class TrainerDataPage:
         if self.event == self.previous.event:
             return self.inst_power
         return self.accumulated_pwr_diff / self.event_diff
-
