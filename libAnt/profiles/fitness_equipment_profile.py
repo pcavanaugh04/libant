@@ -133,6 +133,13 @@ class GeneralFEDataPage:
         self.timestamp = datetime.now()
 
     @lazyproperty
+    def page_number(self):
+        """
+        :return: Data Page Number (int)
+        """
+        return self.msg.content[0]
+
+    @lazyproperty
     def equipment_type(self):
         """
         Indicate equipment type
@@ -175,7 +182,7 @@ class TrainerDataPage:
         self.timestamp = datetime.now()
 
     def __str__(self):
-        return super().__str__() + ' Power: {0:.0f}W'.format(self.averagePower)
+        return super().__str__() + ' Power: {0:.0f}W'.format(self.average_power)
 
     @lazyproperty
     def page_number(self):
