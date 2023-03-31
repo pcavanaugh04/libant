@@ -46,8 +46,8 @@ class UserConfigurationPage(m.AcknowledgedMessage):
                             for y in bin(int(bike_weight))[2:].zfill(12)]
         bike_weight_LSN = bike_weight_bits[8:]
         bike_weight_MSB = bike_weight_bits[0:8]
-        byte4_bits = bike_weight_LSN.extend(offset_bits)
-        byte4 = (m.bits_2_num(byte4_bits))
+        bike_weight_LSN.extend(offset_bits)
+        byte4 = (m.bits_2_num(bike_weight_LSN.extend(offset_bits)))
         byte5 = (m.bits_2_num(bike_weight_MSB))
         content = bytearray([pg_num])
         content.extend(weight_bytes)
@@ -68,7 +68,7 @@ def set_user_config(channel_num,
                     bike_wheel_diameter=700,
                     gear_ratio=0):
     """
-    Set user config on trainer
+    Set user config on trainer.
 
     Parameters
     ----------
@@ -131,33 +131,33 @@ class GeneralFEDataPage:
             return ("Error: Unrecognized Page Type For FE Data Page!")
         self.timestamp = datetime.now()
 
-    @lazyproperty
+    @ lazyproperty
     def page_number(self):
         """
         :return: Data Page Number (int)
         """
         return self.msg.content[0]
 
-    @lazyproperty
+    @ lazyproperty
     def equipment_type(self):
         """
         Indicate equipment type
         """
         return self.msg.content[1]
 
-    @lazyproperty
+    @ lazyproperty
     def elapsed_time(self):
         """
         Accumulated time in resolution
         """
         return self.msg.content[2]
 
-    @lazyproperty
+    @ lazyproperty
     def distance_traveled(self):
         """Accumulated Distance """
         return self.msg.content[3]
 
-    @lazyproperty
+    @ lazyproperty
     def speed(self):
         """Instantaneous speed of unit"""
         LSB = self.msg.content[4]
@@ -183,14 +183,14 @@ class TrainerDataPage:
     def __str__(self):
         return super().__str__() + ' Power: {0:.0f}W'.format(self.average_power)
 
-    @lazyproperty
+    @ lazyproperty
     def page_number(self):
         """
         :return: Data Page Number (int)
         """
         return self.msg.content[0]
 
-    @lazyproperty
+    @ lazyproperty
     def event(self):
         """
         The update event count field is incremented each time the information in the message is updated.
@@ -200,7 +200,7 @@ class TrainerDataPage:
         """
         return self.msg.content[1]
 
-    @lazyproperty
+    @ lazyproperty
     def inst_cadence(self):
         """
         The instantaneous cadence field is used to transmit the pedaling cadence recorded from the power sensor.
@@ -209,7 +209,7 @@ class TrainerDataPage:
         """
         return self.msg.content[2]
 
-    @lazyproperty
+    @ lazyproperty
     def accumulated_power(self):
         """
         Accumulated power is the running sum of the instantaneous power data and is incremented at each update
@@ -218,7 +218,7 @@ class TrainerDataPage:
         """
         return (self.msg.content[4] << 8) | self.msg.content[3]
 
-    @lazyproperty
+    @ lazyproperty
     def inst_power(self):
         """ Instantaneous power (W) """
         LSB_bits = [int(y) for y in bin(self.msg.content[5])[2:].zfill(8)[-8:]]
@@ -227,7 +227,7 @@ class TrainerDataPage:
         MSN = m.bits_2_num(MSN_bits)
         return (MSN << 8) | LSB
 
-    @lazyproperty
+    @ lazyproperty
     def accumulated_pwr_diff(self):
         if self.previous is None:
             return None
@@ -237,7 +237,7 @@ class TrainerDataPage:
         else:
             return self.accumulated_power - self.previous.accumulated_power
 
-    @lazyproperty
+    @ lazyproperty
     def event_diff(self):
         if self.previous is None:
             return None
@@ -247,7 +247,7 @@ class TrainerDataPage:
         else:
             return self.event - self.previous.event
 
-    @lazyproperty
+    @ lazyproperty
     def avg_power(self):
         """
         Under normal conditions with complete RF reception, average power equals instantaneous power.
