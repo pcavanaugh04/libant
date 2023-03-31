@@ -27,7 +27,8 @@ class Driver:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        if self._dev is not None:
+            self.close()
 
     def isOpen(self) -> bool:
         with self._lock:

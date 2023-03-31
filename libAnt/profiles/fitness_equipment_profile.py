@@ -21,7 +21,7 @@ class SetTrackResistancePage(m.AcknowledgedMessage):
                              byte2, byte3, byte4])
         content.extend(int(grade).to_bytes(2, byteorder='little'))
         content.append(C_RR)
-        print(content)
+        # print(content)
         super().__init__(channel_num, content)
 
 
@@ -46,8 +46,9 @@ class UserConfigurationPage(m.AcknowledgedMessage):
                             for y in bin(int(bike_weight))[2:].zfill(12)]
         bike_weight_LSN = bike_weight_bits[8:]
         bike_weight_MSB = bike_weight_bits[0:8]
-        bike_weight_LSN.extend(offset_bits)
-        byte4 = (m.bits_2_num(bike_weight_LSN.extend(offset_bits)))
+        byte4_bits = bike_weight_LSN.copy()
+        byte4_bits.extend(offset_bits)
+        byte4 = (m.bits_2_num(byte4_bits))
         byte5 = (m.bits_2_num(bike_weight_MSB))
         content = bytearray([pg_num])
         content.extend(weight_bytes)

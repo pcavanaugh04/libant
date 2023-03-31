@@ -72,7 +72,7 @@ class Pump(threading.Thread):
         return self
 
     def __exit__(self):  # Added by edyas 02/12/21
-        self.end()
+        self.stop()
 
     def stop(self):
         if not self._stopper.isSet():
@@ -207,9 +207,9 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
-                  w[0].type == msg.content[1] and
-                  w[1] is not None):
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
+                  and w[0].type == msg.content[1]
+                  and w[1] is not None):
                 try:
                     out = w[1](msg, w[0].type)
                 except Exception as e:
@@ -255,10 +255,6 @@ class Pump(threading.Thread):
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                     self._tx.task_done()
                     self._out.put(True)
-
-                elif msg.content[2] == c.EVENT_TRANSFER_TX_FAILED:
-                    self._tx.task_done()
-                    self._out.put(False)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
             if not self.first_message_flag:
