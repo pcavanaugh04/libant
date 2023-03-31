@@ -40,11 +40,13 @@ class UserConfigurationPage(m.AcknowledgedMessage):
         pg_num = c.PAGE_USER_CONFIGURATION
         weight_bytes = (int(user_weight).to_bytes(2, byteorder='little'))
         byte3 = 0xFF
-        offset_bits = bin(int(wheel_diameter_offset))[2:]
-        bike_weight_bits = bin(int(bike_weight))[2:].zfill(12)
-        bike_weight_LSB = bike_weight_bits[8:]
+        offset_bits = [int(y)
+                       for y in bin(int(wheel_diameter_offset))[2:].zfill(4)]
+        bike_weight_bits = [int(y)
+                            for y in bin(int(bike_weight))[2:].zfill(12)]
+        bike_weight_LSN = bike_weight_bits[8:]
         bike_weight_MSB = bike_weight_bits[0:8]
-        byte4_bits = offset_bits + bike_weight_LSB
+        byte4_bits = bike_weight_LSN.extend(offset_bits)
         byte4 = (m.bits_2_num(byte4_bits))
         byte5 = (m.bits_2_num(bike_weight_MSB))
         content = bytearray([pg_num])
@@ -90,11 +92,8 @@ def set_user_config(channel_num,
     bike_weight_set = int(bike_weight / 0.05)
     bike_wheel_d_set = int(bike_wheel_diameter * 0.1)
     gear_ratio_set = int(gear_ratio / 0.03)
-    config_msg = UserConfigurationPage(channel_num,
-                                       user_weight=usr_wt_set,
-                                       bike_weight=bike_weight_set,
-                                       bike_wheel_diameter=bike_wheel_d_set,
-                                       gear_ratio=gear_ratio_set)
+
+    config_msg = UserConfigurationPage()
     return config_msg
 
 
