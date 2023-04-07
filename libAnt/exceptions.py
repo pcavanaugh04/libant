@@ -49,6 +49,12 @@ class TxFail(Exception):
 
 
 class RxSearchTimeout(Exception):
+    def init(self, message="Connection Search Timeout. No Channels Avaliable"):
+        super().__init__(message)
+        self.message = message
+
+
+class RxFailGoToSearch(Exception):
     """ANT Section 9.5.6.1 (0x08)
 
     The channel has dropped to search mode after missing too many messages.
@@ -57,7 +63,6 @@ class RxSearchTimeout(Exception):
     def init(self, message="Channel Dropout. Go To Search"):
         super().__init__(message)
         self.message = message
-        pass
 
 
 # Exceptions to Be implemented

@@ -882,6 +882,9 @@ def process_event_code(msg, evt_code):
         case c.EVENT_RX_SEARCH_TIMEOUT:
             raise(e.RxSearchTimeout())
 
+        case c.EVENT_RX_FAIL_GO_TO_SEARCH:
+            raise(e.RxFailGoToSearch())
+
         case c.CHANNEL_IN_WRONG_STATE:
             raise(e.ChannelInWrongState(msg))
 

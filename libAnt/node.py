@@ -160,6 +160,14 @@ class Pump(threading.Thread):
                         self._out.put(False)
                         self._out.join()
 
+                    except ex.RxFailGoToSearch as e:
+                        self._onFailure(e)
+                        # TODO: Implement Search Procecdure
+
+                    except ex.RxSearchTimeout as e:
+                        self._onFailure(e)
+                        # TODO: Implement Search Timeout
+
                     except Exception as e:
                         traceback.print_exc()
                         self._onFailure(e)
