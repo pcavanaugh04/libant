@@ -49,7 +49,8 @@ class TxFail(Exception):
 
 
 class RxSearchTimeout(Exception):
-    def init(self, message="Connection Search Timeout. No Channels Avaliable"):
+
+    def __init__(self, message="Connection Search Timeout. No Channels Avaliable"):
         super().__init__(message)
         self.message = message
 
@@ -60,14 +61,14 @@ class RxFailGoToSearch(Exception):
     The channel has dropped to search mode after missing too many messages.
     """
 
-    def init(self, message="Channel Dropout. Go To Search"):
+    def __init__(self, message="Channel Dropout. Go To Search"):
         super().__init__(message)
         self.message = message
 
 
 # Exceptions to Be implemented
 class ChannelInWrongState(Exception):
-    def init(self, msg):
+    def __init__(self, msg):
         message = ("Error: Channel in Wrong State for Message"
                    f"Type: {msg.type}")
         super().__init__(message)
@@ -75,22 +76,22 @@ class ChannelInWrongState(Exception):
 
 
 class ChannelNotOpened(Exception):
-    def init(self):
+    def __init__(self):
         pass
 
 
 class ChannelIDNotSet(Exception):
-    def init(self):
+    def __init__(self):
         pass
 
 
 class MessageSizeExceedsLimit(Exception):
-    def init(self):
+    def __init__(self):
         pass
 
 
 class InvalidMessage(Exception):
-    def init(self):
+    def __init__(self):
         pass
 
 

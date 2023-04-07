@@ -166,7 +166,12 @@ class Pump(threading.Thread):
 
                     except ex.RxSearchTimeout as e:
                         self._onFailure(e)
-                        # TODO: Implement Search Timeout
+                        if not self.first_message_flag:
+                            self._out.get()
+                            self._out.task_done()
+                            sleep(0.01)
+                            self._out.put(e)
+                            self._out.join()
 
                     except Exception as e:
                         traceback.print_exc()
@@ -215,9 +220,9 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
-                  and w[0].type == msg.content[1]
-                  and w[1] is not None):
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
+                  w[0].type == msg.content[1] and
+                  w[1] is not None):
                 try:
                     out = w[1](msg, w[0].type)
                 except Exception as e:
@@ -253,8 +258,8 @@ class Pump(threading.Thread):
                 return out
             finally:
                 # Special Case for Channel Close Confirmation message
-                if (msg.content[1] == c.MESSAGE_RF_EVENT
-                        and msg.content[2] == c.EVENT_CHANNEL_CLOSED):
+                if (msg.content[1] == c.MESSAGE_RF_EVENT and
+                        msg.content[2] == c.EVENT_CHANNEL_CLOSED):
                     self._out.get()
                     self._out.task_done()
                     # This works for 1 channel handling at a time...
@@ -295,7 +300,6 @@ class Node:
                  debug=False):
         self._driver = driver
         self._name = name
-        self._out = Queue()
         self._init = []
         self._pump = None
         self.config_messages = Queue()
@@ -349,7 +353,7 @@ class Node:
                      device_type=0,
                      channel_frequency=2457,
                      channel_msg_freq=4,
-                     channel_search_timeout=10,
+                     channel_search_timeout=5,
                      **kwargs):
         # Some input checking
         if channel_num > self.max_channels or channel_num < 0:
@@ -403,6 +407,16 @@ class Node:
         self.outputs.put("Blocking until First Message")
         # TODO: This wont work if the channel times out
         self.outputs.join()
+        try:
+            err = self.outputs.get(block=True, timeout=0.5)
+        except Empty:
+            pass
+
+        else:
+            if isinstance(err, ex.RxSearchTimeout):
+                self.outputs.task_done()
+                return False
+
         self.onSuccess("First Message Recieved!\n"
                        f"Idenfiying Channel {channel_num} Properties...")
         self.channels[channel_num].id = self.get_channel_ID(channel_num)
@@ -410,9 +424,9 @@ class Node:
             channel_num)
         return True
 
-    def close_channel(self, channel_num):
+    def close_channel(self, channel_num, timeout=False):
         try:
-            self.channels[channel_num].close()
+            self.channels[channel_num].close(timeout=timeout)
         except Exception as e:
             raise e
             return False
@@ -592,9 +606,14 @@ class Channel:
         self._ctrl.put(m.OpenChannelMessage(self.number))
         self._ctrl.join()
 
-    def close(self):
-        self._ctrl.put(m.CloseChannelMessage(self.number))
-        self._ctrl.join()
+    def close(self, timeout=False):
+        if not timeout:
+            self._ctrl.put(m.CloseChannelMessage(self.number))
+            self._ctrl.join()
+
+        else:
+            sleep(0.5)
+
         self._out.put("Temp String")
         self._out.join()
         self._cfig.put(m.UnassignChannelMessage(self.number))
