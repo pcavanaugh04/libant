@@ -49,6 +49,7 @@ class Pump(threading.Thread):
                  control_queue: Queue,
                  output_queue: Queue,
                  tx_queue: Queue,
+                 on_shutdown,
                  onSuccess,
                  onFailure,
                  debug):
@@ -66,6 +67,7 @@ class Pump(threading.Thread):
         self._onSuccess = onSuccess
         self._onFailure = onFailure
         self._debug = debug
+        self.on_shutdown = on_shutdown
         self.first_message_flag = False
 
     def __enter__(self):  # Added by edyas 02/12/21
@@ -134,6 +136,14 @@ class Pump(threading.Thread):
                         except Empty:
                             pass
 
+                        except DriverException as e:
+                            # traceback.print_exc()
+                            # self._onFailure(e)
+                            # self.on_shutdown.fire()
+                            # print("Do we get here?")
+                            # self.stop()
+                            raise e
+
                         else:
                             try:
                                 out = self.process_read_message(msg)
@@ -148,8 +158,9 @@ class Pump(threading.Thread):
                     except DriverException as e:
                         traceback.print_exc()
                         self._onFailure(e)
+                        # self.on_shutdown.fire()
                         self.stop()
-                        raise e
+                        # raise e
 
                     except ex.RxFail as e:
                         self._onFailure(e)
@@ -220,9 +231,9 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT and
-                  w[0].type == msg.content[1] and
-                  w[1] is not None):
+            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
+                  and w[0].type == msg.content[1]
+                  and w[1] is not None):
                 try:
                     out = w[1](msg, w[0].type)
                 except Exception as e:
@@ -258,8 +269,8 @@ class Pump(threading.Thread):
                 return out
             finally:
                 # Special Case for Channel Close Confirmation message
-                if (msg.content[1] == c.MESSAGE_RF_EVENT and
-                        msg.content[2] == c.EVENT_CHANNEL_CLOSED):
+                if (msg.content[1] == c.MESSAGE_RF_EVENT
+                        and msg.content[2] == c.EVENT_CHANNEL_CLOSED):
                     self._out.get()
                     self._out.task_done()
                     # This works for 1 channel handling at a time...
@@ -306,6 +317,7 @@ class Node:
         self.control_messages = Queue()
         self.outputs = Queue()
         self.tx_messages = Queue()
+        self.on_shutdown = EventHook()
         self.channels = []
         self.debug = debug
         self.onSuccess = onSuccess
@@ -333,6 +345,7 @@ class Node:
                           self.control_messages,
                           self.outputs,
                           self.tx_messages,
+                          self.on_shutdown,
                           self.onSuccess,
                           self.onFailure,
                           self.debug)
@@ -618,3 +631,26 @@ class Channel:
         self._out.join()
         self._cfig.put(m.UnassignChannelMessage(self.number))
         self._cfig.join()
+
+
+class EventHook(object):
+
+    def __init__(self):
+        self.__handlers = []
+
+    def __iadd__(self, handler):
+        self.__handlers.append(handler)
+        return self
+
+    def __isub__(self, handler):
+        self.__handlers.remove(handler)
+        return self
+
+    def fire(self, *args, **keywargs):
+        for handler in self.__handlers:
+            handler(*args, **keywargs)
+
+    def clearObjectHandlers(self, inObject):
+        for theHandler in self.__handlers:
+            if theHandler.im_self == inObject:
+                self -= theHandler
