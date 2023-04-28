@@ -1,6 +1,7 @@
 import threading
 from queue import Queue, Empty
 from time import sleep
+from datetime import datetime
 
 from libAnt.drivers.driver import Driver, DriverException
 import libAnt.message as m
@@ -572,6 +573,11 @@ class Node:
         None.
         """
         pass
+
+    def add_msg(self, msg):
+        dt = datetime.now()
+        dt_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        self.messages.append(f"{dt_str}, {msg}")
 
 
 class Channel:
