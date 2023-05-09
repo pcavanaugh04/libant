@@ -68,7 +68,8 @@ class USBDriver(Driver):
         return self._driver_open
 
     def _open(self) -> None:
-        print('USB OPEN START')
+        if not self._gui_logger:
+            print('USB OPEN START')
         try:
             # find the first USB device that matches the filter
             libusb0_backend = libusb0.get_backend()
@@ -122,13 +123,17 @@ class USBDriver(Driver):
                 self._epIn, self._packetSize, self._queue)
             self._loop.start()
             self._driver_open = True
-            print('USB OPEN SUCCESS')
+            if self._gui_logger:
+                self._gui_logger.info('ANT+ Device USB Loop Started')
+            else:
+                print('USB OPEN SUCCESS')
         except IOError as e:
             self._close()
             raise DriverException(str(e))
 
     def _close(self) -> None:
-        print('USB CLOSE START')
+        if not self._gui_logger:
+            print('USB CLOSE START')
         if self._loop is not None:
             if self._loop.is_alive():
                 self._loop.stop()
@@ -142,7 +147,10 @@ class USBDriver(Driver):
             pass
         self._dev = self._epOut = self._epIn = None
         self._driver_open = False
-        print('USB CLOSE END')
+        if self._gui_logger:
+            self._gui_logger.info('ANT+ Device USB Loop Terminated')
+        else:
+            print('USB CLOSE END')
 
     def _read(self, count: int, timeout=None) -> bytes:
         data = bytearray()
