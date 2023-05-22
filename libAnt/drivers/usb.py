@@ -17,7 +17,7 @@ class USBDriver(Driver):
     An implementation of a USB ANT+ device driver
     """
 
-    def __init__(self, vid, pid, logger: Logger = None):
+    def __init__(self, vid, pid, logger=None):
         super().__init__(logger=logger)
         self._idVendor = vid
         self._idProduct = pid
