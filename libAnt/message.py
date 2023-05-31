@@ -39,8 +39,8 @@ class Message:
             Formatted message containing message type and content.
 
         """
-        return ('({:02X}): '.format(self._type) +
-                ' '.join('{:02X}'.format(x) for x in self._content))
+        return ('({:02X}): '.format(self._type)
+                + ' '.join('{:02X}'.format(x) for x in self._content))
 
     def checksum(self) -> int:
         """Create checksum byte to ensure message is recieved properly.
@@ -97,7 +97,7 @@ class Message:
         if msg.content[2] == 0:
             return(f'Message Success. Type: {hex(msg_type)}')
         else:
-            return(process_event_code(msg.content[2]))
+            return(process_event_code(msg, msg.content[2]))
 
     @property
     def type(self) -> int:
@@ -177,7 +177,7 @@ class SetChannelIdMessage(Message):
                  tx_type: int = 0):
         content = bytearray([channel])
         content.extend(device_number.to_bytes(2, byteorder='little'))
-        content.append(int(pairing_bit)*128 + int(device_type))
+        content.append(int(pairing_bit) * 128 + int(device_type))
         content.append(tx_type)
         super().__init__(c.MESSAGE_CHANNEL_ID, bytes(content))
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -209,7 +209,8 @@ class ChannelMessagingPeriodMessage(Message):
 
         """
         content = bytearray([channel])
-        content.extend(int(1/frequency*32768).to_bytes(2, byteorder='little'))
+        content.extend(
+            int(1 / frequency * 32768).to_bytes(2, byteorder='little'))
         super().__init__(c.MESSAGE_CHANNEL_PERIOD, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
@@ -238,7 +239,7 @@ class ChannelSearchTimeoutMessage(Message):
         None
 
         """
-        content = bytes([channel, int(timeout/2.5)])
+        content = bytes([channel, int(timeout / 2.5)])
         super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
@@ -318,7 +319,7 @@ class ResetSystemMessage(Message):
         super().__init__(c.MESSAGE_SYSTEM_RESET, bytes([0]))
         self.reply_type = c.MESSAGE_STARTUP
         self.source = 'Host'
-        self.callback = StartUpMessage.disp_startup
+        self.callback = StartUpMessage
 
 
 class OpenChannelMessage(Message):
@@ -449,6 +450,13 @@ class RequestSerialNumberMessage(RequestMessage):
 # %% Data Messages
 
 class BroadcastMessage(Message):
+    """ANT Section 9.5.5.1
+
+    Braodcast messages are one-way, un-acknowledged data packets sent across a
+    channel. The data payload is 8 bytes and can be configred to contain
+    extended fields.
+    """
+
     def __init__(self, type: int, content: bytes):
         self.flag = None
         self.device_number = self.device_type = self.tx_type = None
@@ -461,6 +469,25 @@ class BroadcastMessage(Message):
         super().__init__(type, content)
 
     def build(self, raw: bytes):
+        """Construct broadcast message to a standard format.
+
+        The build method extracts information from the broadcast message object
+        and reformats the object into a standard, 8byte payload. This method
+        can process extended data packets.
+
+        Parameters
+        ----------
+        raw : bytes
+            A 9 byte array consisting of channel number raw[0] and message
+            content raw[1:9]
+
+        Returns
+        -------
+        self
+            returns an updated version of the broadcast message object for
+            assignment
+
+        """
         self._type = c.MESSAGE_CHANNEL_BROADCAST_DATA
         self.channel = raw[0]
         self._content = raw[1:9]
@@ -498,7 +525,9 @@ class AcknowledgedMessage(Message):
     """ANT Section 9.5.5.2 (0x4F)
 
     Send from master or slave to recieving node when the success or failure of
-    a message needs to be known
+    a message needs to be known. This message is sometimes used by different
+    device profiles to configure content and share control information from
+    slave to master devices.
     """
 
     def __init__(self, channel_num, content: bytes):
@@ -521,9 +550,18 @@ class StartUpMessage(Message):
         self.callback = self.disp_startup
 
     def disp_startup(self, msg):
-        if not msg.type == c.MESSAGE_STARTUP:
-            return(f"Error: Unexpected Message Type {msg.type}")
-        start_bits = bit_array(msg.content[0])
+        """Display startup message from device with associated start-up codes
+
+        This method can be chosed to be printed to the success callback where
+        it is called.
+
+        Returns
+        -------
+        start_str : str
+            Formatted message for display
+
+        """
+        start_bits = bit_array(self.content[0])
         start_str = 'Device Startup Successful. Reset type:\n'
         if start_bits[0]:
             start_str += '\tHARDWARE_RESET_LINE\n'
@@ -535,7 +573,7 @@ class StartUpMessage(Message):
             start_str += '\tSYNCHRONOUS_RESET\n'
         if start_bits[7]:
             start_str += '\tSUSPEND_RESET\n'
-        return(start_str.strip())
+        return start_str.strip()
 
 
 class SerialErrorMessage(Message):
@@ -575,8 +613,6 @@ class CapabilitiesMessage(Message):
     contains summary of ANT device capabilities. See ANT Document for full
     implementation
     """
-    # TODO: Add capabilities request and unpack to thread start to enforce
-    # Input checking (channel numbers and network numbers)
 
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CAPABILITIES, content)
@@ -603,7 +639,7 @@ class CapabilitiesMessage(Message):
                 case 'std_options':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_NO_RECEIVE_CHANNELS: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_NO_TRANSMIT_CHANNELS: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_NO_TRANSMIT_CHANNELS: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_NO_RECEIVE_MESSAGES: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_NO_TRANSMIT_MESSAGES: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_NO_ACKD_MESSAGES: {bool(value[4])}\n'
@@ -612,7 +648,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_NETWORK_ENABLED: {bool(value[1])}\n'
-                                f'\t\tCAPABILITIES_SERIAL_NUMBER_ENABLED: {bool(value[3])}\n' 
+                                f'\t\tCAPABILITIES_SERIAL_NUMBER_ENABLED: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_PER_CHANNEL_TX_POWER_ENABLED: {bool(value[4])}\n'
                                 f'\t\tCAPABILITIES_LOW_PRIORITY_SEARCH_ENABLED: {bool(value[5])}\n'
                                 f'\t\tCAPABILITIES_SCRIPT_ENABLED: {bool(value[6])}\n'
@@ -621,7 +657,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options2':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_LED_ENABLED: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_EXT_MESSAGE_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_EXT_MESSAGE_ENABLED: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_SCAN_MODE_ENABLED: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_PROX_SEARCH_ENABLED: {bool(value[4])}\n'
                                 f'\t\tCAPABILITIES_EXT_ASSIGN_ENABLED: {bool(value[5])}\n'
@@ -631,7 +667,7 @@ class CapabilitiesMessage(Message):
                 case 'adv_options3':
                     cap_str += (f'\t{key}:\n'
                                 f'\t\tCAPABILITIES_ADVANCED_BURST_ENABLED: {bool(value[0])}\n'
-                                f'\t\tCAPABILITIES_EVENT_BUFFERING_ENABLED: {bool(value[1])}\n' 
+                                f'\t\tCAPABILITIES_EVENT_BUFFERING_ENABLED: {bool(value[1])}\n'
                                 f'\t\tCAPABILITIES_EVENT_FILTERING_ENABLED: {bool(value[2])}\n'
                                 f'\t\tCAPABILITIES_HIGH_DUTY_SEARCH_ENABLED: {bool(value[3])}\n'
                                 f'\t\tCAPABILITIES_SEARCH_SHARING_ENABLED: {bool(value[4])}\n'
@@ -717,8 +753,8 @@ class ChannelIDMessage(Message):
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CHANNEL_ID, content)
         self.channel_num = int(content[0])
-        self.device_number = int.from_bytes((content[1].to_bytes(1, 'little') +
-                                            content[2].to_bytes(1, 'little')),
+        self.device_number = int.from_bytes((content[1].to_bytes(1, 'little')
+                                            + content[2].to_bytes(1, 'little')),
                                             byteorder='little')
         self.device_type = int(content[3])
         self.tx_type = bit_array(content[4])
@@ -758,6 +794,11 @@ class ChannelIDMessage(Message):
 
 
 class SerialNumberMessage(Message):
+    """ANT Section 9.5.7.5 (0x61)
+
+    Return device 4-byte serial number upon request
+    """
+
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_SERIAL_NUMBER, content)
         x = b''
@@ -766,7 +807,7 @@ class SerialNumberMessage(Message):
         self.serial_number = int.from_bytes(x, byteorder='little')
         self.source = 'ANT'
 
-    def disp_SN(msg):
+    def disp_SN(self, msg):
         if not msg.type == c.MESSAGE_SERIAL_NUMBER:
             return(f"Error: Unexpected Message Type {msg.type}")
 
@@ -818,7 +859,7 @@ def bits_2_num(bit_array):
     return int_value
 
 
-def process_event_code(evt_code):
+def process_event_code(msg, evt_code):
     match evt_code:
         case c.EVENT_RX_FAIL:
             raise e.RxFail()
@@ -837,6 +878,15 @@ def process_event_code(evt_code):
 
         case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
             raise(e.MessageSizeExceedsLimit())
+
+        case c.EVENT_RX_SEARCH_TIMEOUT:
+            raise(e.RxSearchTimeout())
+
+        case c.EVENT_RX_FAIL_GO_TO_SEARCH:
+            raise(e.RxFailGoToSearch())
+
+        case c.CHANNEL_IN_WRONG_STATE:
+            raise(e.ChannelInWrongState(msg))
 
         case _:
             return(f"Warning: Event Code not yet implemented for :{evt_code}")

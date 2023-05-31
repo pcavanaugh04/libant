@@ -4,7 +4,7 @@ from queue import Empty
 from threading import Lock
 
 from libAnt.constants import MESSAGE_TX_SYNC
-from libAnt.loggers.logger import Logger
+# from libAnt.loggers.logger import Logger
 from libAnt.message import Message
 
 
@@ -17,17 +17,19 @@ class Driver:
     The driver provides an interface to read and write raw data to and from an ANT+ capable hardware device
     """
 
-    def __init__(self, logger: Logger = None):
+    def __init__(self, logger=None):
         self._lock = Lock()
-        self._logger = logger
+        self._gui_logger = logger
         self._openTime = None
+        self._logger = None
 
     def __enter__(self):
         self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
+        if self._dev is not None:
+            self.close()
 
     def isOpen(self) -> bool:
         with self._lock:
