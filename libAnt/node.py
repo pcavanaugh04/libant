@@ -577,7 +577,7 @@ class Node:
     def add_msg(self, msg):
         dt = datetime.now()
         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        self.messages.append(f"{dt_str}, {msg}")
+        self.messages.append(f"{dt_str},{msg}")
 
 
 class Channel:
