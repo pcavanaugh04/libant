@@ -19,6 +19,7 @@ class Message:
         self.callback = self.device_reply  # Function called on message success
         self.reply_type = None  # Field to indicate if message expects a reply
         self.source = ''  # Descriptive field to know where message comes from
+        self.channel = None
 
     def __len__(self):
         "Length property updated to only show length of content attribute"
@@ -140,6 +141,7 @@ class UnassignChannelMessage(Message):
     def __init__(self, channel: int):
         content = bytearray([channel])
         super().__init__(c.MESSAGE_CHANNEL_UNASSIGN, bytes(content))
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         # self.callback = self.device_reply
         self.source = 'Host'
@@ -160,6 +162,7 @@ class AssignChannelMessage(Message):
         if extended is not None:
             content.append(extended)
         super().__init__(c.MESSAGE_CHANNEL_ASSIGN, bytes(content))
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -180,6 +183,7 @@ class SetChannelIdMessage(Message):
         content.append(int(pairing_bit) * 128 + int(device_type))
         content.append(tx_type)
         super().__init__(c.MESSAGE_CHANNEL_ID, bytes(content))
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -212,6 +216,7 @@ class ChannelMessagingPeriodMessage(Message):
         content.extend(
             int(1 / frequency * 32768).to_bytes(2, byteorder='little'))
         super().__init__(c.MESSAGE_CHANNEL_PERIOD, content)
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -241,6 +246,7 @@ class ChannelSearchTimeoutMessage(Message):
         """
         content = bytes([channel, int(timeout / 2.5)])
         super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -269,6 +275,7 @@ class SetChannelRfFrequencyMessage(Message):
 
         content = bytes([channel, frequency - 2400])
         super().__init__(c.MESSAGE_CHANNEL_FREQUENCY, content)
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -280,6 +287,7 @@ class EnableExtendedMessagesMessage(Message):
     """
 
     def __init__(self, enable: bool = True):
+        
         content = bytes([0, int(enable)])
         super().__init__(c.MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -342,7 +350,9 @@ class OpenChannelMessage(Message):
         -------
         None
         """
+        
         super().__init__(c.MESSAGE_CHANNEL_OPEN, bytes([channel]))
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
 
@@ -368,7 +378,9 @@ class CloseChannelMessage(Message):
         -------
         None
         """
+        
         super().__init__(c.MESSAGE_CHANNEL_CLOSE, bytes([channel]))
+        self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
         self.source = 'Host'
         # TODO: Implement Callback to wait for both expected responses to close
@@ -427,6 +439,7 @@ class RequestChannelStatusMessage(RequestMessage):
     def __init__(self, channel_num: int):
         content = bytearray([channel_num, c.MESSAGE_CHANNEL_STATUS])
         super().__init__(content)
+        self.channel = channel_num
         self.callback = ChannelStatusMessage
         self.reply_type = c.MESSAGE_CHANNEL_STATUS
 
@@ -435,6 +448,7 @@ class RequestChannelIDMessage(RequestMessage):
     def __init__(self, channel_num: int):
         content = bytearray([channel_num, c.MESSAGE_CHANNEL_ID])
         super().__init__(content)
+        self.channel = channel_num
         self.callback = ChannelIDMessage
         self.reply_type = c.MESSAGE_CHANNEL_ID
 
@@ -464,7 +478,6 @@ class BroadcastMessage(Message):
         self.rssi = None
         self.rssi_threshold = None
         self.rx_timestamp = None
-        self.channel = None
         self.ext_content = None
         super().__init__(type, content)
 
@@ -533,6 +546,7 @@ class AcknowledgedMessage(Message):
     def __init__(self, channel_num, content: bytes):
         content = bytes([channel_num]) + content
         super().__init__(c.MESSAGE_CHANNEL_ACKNOWLEDGED_DATA, content)
+        self.channel = channel_num
 
 
 # %% Notification Messages
@@ -693,7 +707,7 @@ class ChannelStatusMessage(Message):
 
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CHANNEL_STATUS, content)
-        self.channel_num = int(content[0])
+        self.channel = int(content[0])
         channel_status = bit_array(content[1])
         match bits_2_num(channel_status[0:2]):
             case 0:
@@ -752,7 +766,7 @@ class ChannelIDMessage(Message):
 
     def __init__(self, content: bytes):
         super().__init__(c.MESSAGE_CHANNEL_ID, content)
-        self.channel_num = int(content[0])
+        self.channel = int(content[0])
         self.device_number = int.from_bytes((content[1].to_bytes(1, 'little')
                                             + content[2].to_bytes(1, 'little')),
                                             byteorder='little')
@@ -860,30 +874,31 @@ def bits_2_num(bit_array):
 
 
 def process_event_code(msg, evt_code):
+    msg.channel = msg.content[0]
     match evt_code:
         case c.EVENT_RX_FAIL:
-            raise e.RxFail()
+            raise e.RxFail(msg.channel)
 
         case c.EVENT_TRANSFER_TX_FAILED:
-            raise e.TxFail()
+            raise e.TxFail(msg.channel)
 
         case c.INVALID_MESSAGE:
             raise e.InvalidMessage()
 
         case c.EVENT_CHANNEL_CLOSED:
-            return("Channel Close Success")
+            return("Channel: {msg.channeL} Close Success")
 
         case c.EVENT_TRANSFER_TX_COMPLETED:
             return("Tx Success")
 
         case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
-            raise(e.MessageSizeExceedsLimit())
+            raise(e.MessageSizeExceedsLimit(msg.channel))
 
         case c.EVENT_RX_SEARCH_TIMEOUT:
-            raise(e.RxSearchTimeout())
+            raise(e.RxSearchTimeout(msg.channel))
 
         case c.EVENT_RX_FAIL_GO_TO_SEARCH:
-            raise(e.RxFailGoToSearch())
+            raise(e.RxFailGoToSearch(msg.channel))
 
         case c.CHANNEL_IN_WRONG_STATE:
             raise(e.ChannelInWrongState(msg))

@@ -31,9 +31,10 @@ class RxFail(Exception):
     message rate.
     """
 
-    def __init__(self, message="Rx Fail"):
+    def __init__(self, channel, message="Rx Fail"):
         super().__init__(message)
         self.message = message
+        self.channel = channel
 
 
 class TxFail(Exception):
@@ -43,16 +44,20 @@ class TxFail(Exception):
     initiated and the transmission failed to complete successfully
     """
 
-    def __init__(self, message="Tx Fail"):
+    def __init__(self, channel, message="Tx Fail"):
         super().__init__(message)
         self.message = message
+        self.channel = channel
 
 
 class RxSearchTimeout(Exception):
 
-    def __init__(self, message="Connection Search Timeout. No Channels Avaliable"):
+    def __init__(self,
+                 channel,
+                 message="Connection Search Timeout. No Channels Avaliable"):
         super().__init__(message)
         self.message = message
+        self.channel = channel
 
 
 class RxFailGoToSearch(Exception):
@@ -61,16 +66,17 @@ class RxFailGoToSearch(Exception):
     The channel has dropped to search mode after missing too many messages.
     """
 
-    def __init__(self, message="Channel Dropout. Go To Search"):
+    def __init__(self, channel, message="Channel Dropout. Go To Search"):
         super().__init__(message)
         self.message = message
-
+        self.channel = channel
 
 # Exceptions to Be implemented
 class ChannelInWrongState(Exception):
     def __init__(self, msg):
         message = ("Error: Channel in Wrong State for Message"
                    f"Type: {msg.type}")
+        self.channel = msg.content[0]
         super().__init__(message)
         pass
 

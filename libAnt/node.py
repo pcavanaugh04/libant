@@ -69,7 +69,7 @@ class Pump(threading.Thread):
         self._onFailure = onFailure
         self._debug = debug
         self.on_shutdown = on_shutdown
-        self.first_message_flag = False
+        self.first_message_flags = []
 
     def __enter__(self):  # Added by edyas 02/12/21
         return self
@@ -174,11 +174,10 @@ class Pump(threading.Thread):
 
                     except ex.RxFailGoToSearch as e:
                         self._onFailure(e)
-                        # TODO: Implement Search Procecdure
 
                     except ex.RxSearchTimeout as e:
                         self._onFailure(e)
-                        if not self.first_message_flag:
+                        if not self.first_message_flags[e.channel]:
                             self._out.get()
                             self._out.task_done()
                             sleep(0.01)
@@ -216,7 +215,6 @@ class Pump(threading.Thread):
     def process_read_message(self, msg):
 
         # Control Message Responses
-
         for w in self._control_waiters:
             # Requested Response Messages
             if w[0].type == c.MESSAGE_CHANNEL_REQUEST:
@@ -275,20 +273,23 @@ class Pump(threading.Thread):
                     self._out.get()
                     self._out.task_done()
                     # This works for 1 channel handling at a time...
-                    self.first_message_flag = False
+                    self.first_message_flags[msg.channel] = False
 
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                     self._tx.task_done()
                     self._out.put(True)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
-            if not self.first_message_flag:
-                self._out.get()
-                self._out.task_done()
-                self.first_message_flag = True
+            # Build broadcast message into standard format
             bmsg = m.BroadcastMessage(msg.type,
                                       msg.content)
             bmsg = bmsg.build(msg.content)
+            # Change first message flags to notify of successful connection
+            if not self.first_message_flags[bmsg.channel]:
+                self._out.get()
+                self._out.task_done()
+                self.first_message_flags[bmsg.channel] = True
+
             return bmsg
 
         # Patrick's Stuff
@@ -356,8 +357,14 @@ class Node:
         self.serial_number = self.get_ANT_serial_number(disp=False)
         self.max_channels = self.capabilities["max_channels"]
         self.max_networks = self.capabilities["max_networks"]
+        self._pump.first_message_flags = [False] * self.max_channels
         self.channels = [None] * self.max_channels
+        # self.config_messages.channel_queues = [None] * self.max_channels
+        # self.control_messages.channel_queues = [None] * self.max_channels
+        # self.outputs.channel_queues = [None] * self.max_channels
+        # self.tx_messages.channel_queues = [None] * self.max_channels
         self.networks = [0] * self.max_networks
+        
         return True
 
     def open_channel(self, channel_num: int = 0,
@@ -583,8 +590,8 @@ class Node:
 class Channel:
     """Channel class to handle IO of a single connection"""
 
-    def __init__(self, config_queue,
-                 control_queue,
+    def __init__(self, cfig_queue,
+                 ctrl_queue,
                  out_queue,
                  channel_num=0,
                  network_num=0,
@@ -595,10 +602,14 @@ class Channel:
                  channel_msg_freq=4,
                  channel_search_timeout=30):
 
-        self._cfig = config_queue
-        self._ctrl = control_queue
-        self._out = out_queue
+
         self.number = channel_num
+        self._cfig = cfig_queue
+        self._ctrl = ctrl_queue
+        self._out = out_queue
+        # self.cfig_queue = ANTQueue(self.number)
+        # self.ctrl_queue = ANTQueue(self.number)
+        # self.out_queue = ANTQueue(self.number)
         self.network = network_num
         self.network_key = network_key
         self._type = channel_type
@@ -638,6 +649,10 @@ class Channel:
         self._cfig.put(m.UnassignChannelMessage(self.number))
         self._cfig.join()
 
+    def run(self):
+        """Run method for channel thread. Process inputs and outputs to main
+        device thread"""
+        
 
 class EventHook(object):
 
@@ -660,3 +675,34 @@ class EventHook(object):
         for theHandler in self.__handlers:
             if theHandler.im_self == inObject:
                 self -= theHandler
+                
+class ANTQueue(Queue):
+    """
+    Subclass of threading.queue class with additonal attributes specific to
+    handling multiple channels of ANT communication
+    """
+    def __init__(self, channel_num):
+        # Initailzie Queue object superclass
+        super().__init__()
+        self.channel_number = channel_num
+    
+class QueueManager:
+    """
+    Manage multiple queues across threads to ensure messages and information
+    is correctly being translated and recieved across channels
+    """
+    def __init__(self):
+        self.channel_queues = None
+
+    def add_queue(self, channel, queue):
+        """Add queue to queue manager from channel.
+        """
+        if self.channel_queues is not None:
+            self.channel_queues[channel] = queue
+        
+        else:
+            print("Error! QueueManager has not been properly initialized")
+            
+    def remove_queue(self, channel):
+        """Remove channel from queue manager"""
+        self.channel_queues[channel] = None
