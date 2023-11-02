@@ -98,7 +98,8 @@ class Message:
         if msg.content[2] == 0:
             return(f'Message Success. Type: {hex(msg_type)}')
         else:
-            return(process_event_code(msg, msg.content[2]))
+            event_msg = ChannelResponseMessage(msg.content)
+            return(event_msg.process_event())
 
     @property
     def type(self) -> int:
@@ -830,6 +831,62 @@ class SerialNumberMessage(Message):
         sn_str += f"\tSerial Number: {SN_msg.serial_number}\n"
 
         return sn_str
+    
+class ChannelResponseMessage(Message):
+    """ANT Section 9.5.6.1 (0x40)
+    
+    Response from device to an event initiated by the host. message parameters
+    contain channel of event and event code notated in protocol documentation
+    """
+    
+    def __init__(self, msg: Message):
+        super().__init__(c.MESSAGE_CHANNEL_EVENT, msg.content)
+        self.channel = int(msg.content[0])
+        self.message_ID = msg.content[1]
+        self.event_code = msg.content[2]
+        self.source = "device"
+        
+    def process_event(self):
+        """
+        
+
+        Returns
+        -------
+        None.
+
+        """
+        # msg.channel = msg.content[0]
+        match self.event_code:
+            case c.EVENT_RX_FAIL:
+                raise e.RxFail(self.channel)
+
+            case c.EVENT_TRANSFER_TX_FAILED:
+                raise e.TxFail(self.channel)
+
+            case c.INVALID_MESSAGE:
+                raise e.InvalidMessage()
+
+            case c.EVENT_CHANNEL_CLOSED:
+                return("Channel: {msg.channeL} Close Success")
+
+            case c.EVENT_TRANSFER_TX_COMPLETED:
+                return("Tx Success")
+
+            case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
+                raise(e.MessageSizeExceedsLimit(self.channel))
+
+            case c.EVENT_RX_SEARCH_TIMEOUT:
+                raise(e.RxSearchTimeout(self.channel))
+
+            case c.EVENT_RX_FAIL_GO_TO_SEARCH:
+                raise(e.RxFailGoToSearch(self.channel))
+
+            case c.CHANNEL_IN_WRONG_STATE:
+                raise(e.ChannelInWrongState(self))
+
+            case _:
+                return("Warning: Event Code not yet implemented for "
+                       f":{self.event_code}")
 
 
 def bit_array(byte):
@@ -873,35 +930,35 @@ def bits_2_num(bit_array):
     return int_value
 
 
-def process_event_code(msg, evt_code):
-    msg.channel = msg.content[0]
-    match evt_code:
-        case c.EVENT_RX_FAIL:
-            raise e.RxFail(msg.channel)
+# def process_event_code(msg, evt_code):
+#     msg.channel = msg.content[0]
+#     match evt_code:
+#         case c.EVENT_RX_FAIL:
+#             raise e.RxFail(msg.channel)
 
-        case c.EVENT_TRANSFER_TX_FAILED:
-            raise e.TxFail(msg.channel)
+#         case c.EVENT_TRANSFER_TX_FAILED:
+#             raise e.TxFail(msg.channel)
 
-        case c.INVALID_MESSAGE:
-            raise e.InvalidMessage()
+#         case c.INVALID_MESSAGE:
+#             raise e.InvalidMessage()
 
-        case c.EVENT_CHANNEL_CLOSED:
-            return("Channel: {msg.channeL} Close Success")
+#         case c.EVENT_CHANNEL_CLOSED:
+#             return("Channel: {msg.channeL} Close Success")
 
-        case c.EVENT_TRANSFER_TX_COMPLETED:
-            return("Tx Success")
+#         case c.EVENT_TRANSFER_TX_COMPLETED:
+#             return("Tx Success")
 
-        case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
-            raise(e.MessageSizeExceedsLimit(msg.channel))
+#         case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
+#             raise(e.MessageSizeExceedsLimit(msg.channel))
 
-        case c.EVENT_RX_SEARCH_TIMEOUT:
-            raise(e.RxSearchTimeout(msg.channel))
+#         case c.EVENT_RX_SEARCH_TIMEOUT:
+#             raise(e.RxSearchTimeout(msg.channel))
 
-        case c.EVENT_RX_FAIL_GO_TO_SEARCH:
-            raise(e.RxFailGoToSearch(msg.channel))
+#         case c.EVENT_RX_FAIL_GO_TO_SEARCH:
+#             raise(e.RxFailGoToSearch(msg.channel))
 
-        case c.CHANNEL_IN_WRONG_STATE:
-            raise(e.ChannelInWrongState(msg))
+#         case c.CHANNEL_IN_WRONG_STATE:
+#             raise(e.ChannelInWrongState(msg))
 
-        case _:
-            return(f"Warning: Event Code not yet implemented for :{evt_code}")
+#         case _:
+#             return(f"Warning: Event Code not yet implemented for :{evt_code}")

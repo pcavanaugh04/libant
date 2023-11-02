@@ -195,6 +195,7 @@ class Pump(threading.Thread):
 
     def send_message(self, queue: Queue, waiters, driver):
         try:
+            # Grab messages from input queue
             outMsg = queue.get(block=False)
             driver.write(outMsg)
             if outMsg.type == c.MESSAGE_SYSTEM_RESET:
@@ -230,24 +231,28 @@ class Pump(threading.Thread):
                         self._out.join()
 
             # Channel Event Messages in response to control messages
-            elif (msg.type == c.MESSAGE_CHANNEL_EVENT
-                  and w[0].type == msg.content[1]
-                  and w[1] is not None):
-                try:
-                    out = w[1](msg, w[0].type)
-                except Exception as e:
-                    raise e
-                else:
-                    return out
-                finally:
-                    self._control.task_done()
-                    self._control_waiters.remove(w)
-                break
+            elif msg.type == c.MESSAGE_CHANNEL_EVENT:
+                msg = m.ChannelResponseMessage(msg)          
+                if all([w[0].channel == msg.channel,
+                        w[0].type == msg.type,
+                        w[1] is not None]):
+                    try:
+                        out = w[1](msg, w[0].type)
+                    except Exception as e:
+                        raise e
+                    else:
+                        return out
+                    finally:
+                        self._control.task_done()
+                        self._control_waiters.remove(w)
+                    break
 
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
+            msg = m.ChannelResponseMessage(msg)
             # This is a response to our outgoing message
             for w in self._config_waiters:
-                if w[0].type == msg.content[1] and w[1] is not None:
+                # print(f"waiter type: {w[0].type} || message: {msg.type}")
+                if w[0].type == msg.message_ID and w[1] is not None:
                     try:
                         out = w[1](msg, w[0].type)
                     except Exception as e:
@@ -261,7 +266,7 @@ class Pump(threading.Thread):
 
             # msg.content[1] == c.MESSAGE_RF_EVENT:
             try:
-                out = m.process_event_code(msg, msg.content[2])
+                out = msg.process_event()
             except Exception as e:
                 raise e
             else:
@@ -424,7 +429,7 @@ class Node:
         self.channels[channel_num].open()
         self.onSuccess(f"Channel {channel_num} Open Success!\n"
                        "Waiting until First message...")
-        self._pump.first_msg_flag = False
+        self._pump.first_message_flags[channel_num] = False
         self.outputs.put("Blocking until First Message")
         # TODO: This wont work if the channel times out
         self.outputs.join()
