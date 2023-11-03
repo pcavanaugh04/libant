@@ -288,7 +288,7 @@ class EnableExtendedMessagesMessage(Message):
     """
 
     def __init__(self, enable: bool = True):
-        
+
         content = bytes([0, int(enable)])
         super().__init__(c.MESSAGE_ENABLE_EXT_RX_MESSAGES, content)
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -351,7 +351,7 @@ class OpenChannelMessage(Message):
         -------
         None
         """
-        
+
         super().__init__(c.MESSAGE_CHANNEL_OPEN, bytes([channel]))
         self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -379,7 +379,7 @@ class CloseChannelMessage(Message):
         -------
         None
         """
-        
+
         super().__init__(c.MESSAGE_CHANNEL_CLOSE, bytes([channel]))
         self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
@@ -721,7 +721,7 @@ class ChannelStatusMessage(Message):
                 self.channel_state = 'Tracking'
         self.network_number = bits_2_num(channel_status[2:4])
         self.channel_type = bits_2_num(channel_status[4:])
-        self.status_dict = {'channel_number': self.channel_num,
+        self.status_dict = {'channel_number': self.channel,
                             'channel_state': self.channel_state,
                             'network_number': self.network_number,
                             'channel_type': self.channel_type}
@@ -733,7 +733,7 @@ class ChannelStatusMessage(Message):
 
         status_msg = ChannelStatusMessage(msg.content)
         status_str = "\nChannel Status:\n"
-        status_str += f"\tChannel Number: {status_msg.channel_num}\n"
+        status_str += f"\tChannel Number: {status_msg.channel}\n"
         # Channel Type ANT Protocol Table 5-1
         match status_msg.channel_type:
             case 0x00:
@@ -773,7 +773,7 @@ class ChannelIDMessage(Message):
                                             byteorder='little')
         self.device_type = int(content[3])
         self.tx_type = bit_array(content[4])
-        self.id_dict = {'channel_number': self.channel_num,
+        self.id_dict = {'channel_number': self.channel,
                         'device_number': self.device_number,
                         'device_type': self.device_type,
                         'tx_type': self.device_type}
@@ -784,7 +784,7 @@ class ChannelIDMessage(Message):
 
         id_msg = ChannelIDMessage(msg.content)
         id_str = "\nChannel ID:\n"
-        id_str += f"\tChannel Number: {id_msg.channel_num}\n"
+        id_str += f"\tChannel Number: {id_msg.channel}\n"
         id_str += f"\tDevice Number: {id_msg.device_number}\n"
         id_str += f"\tDevice Type: {id_msg.device_type}\n"
 
@@ -831,24 +831,25 @@ class SerialNumberMessage(Message):
         sn_str += f"\tSerial Number: {SN_msg.serial_number}\n"
 
         return sn_str
-    
+
+
 class ChannelResponseMessage(Message):
     """ANT Section 9.5.6.1 (0x40)
-    
+
     Response from device to an event initiated by the host. message parameters
     contain channel of event and event code notated in protocol documentation
     """
-    
+
     def __init__(self, msg: Message):
         super().__init__(c.MESSAGE_CHANNEL_EVENT, msg.content)
         self.channel = int(msg.content[0])
         self.message_ID = msg.content[1]
         self.event_code = msg.content[2]
         self.source = "device"
-        
+
     def process_event(self):
         """
-        
+
 
         Returns
         -------
