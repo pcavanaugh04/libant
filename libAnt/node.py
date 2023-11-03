@@ -201,6 +201,7 @@ class Pump(threading.Thread):
             if outMsg.type == c.MESSAGE_SYSTEM_RESET:
                 # Wait for system to finish reset before doing anything
                 sleep(0.6)
+                return
 
         except Empty:
             pass
@@ -233,8 +234,9 @@ class Pump(threading.Thread):
             # Channel Event Messages in response to control messages
             elif msg.type == c.MESSAGE_CHANNEL_EVENT:
                 msg = m.ChannelResponseMessage(msg)          
+                # Match channel response message to message in waiter
                 if all([w[0].channel == msg.channel,
-                        w[0].type == msg.type,
+                        w[0].type == msg.message_ID,
                         w[1] is not None]):
                     try:
                         out = w[1](msg, w[0].type)
@@ -303,6 +305,7 @@ class Pump(threading.Thread):
             if msg.type == c.MESSAGE_STARTUP:
                 start_msg = m.StartUpMessage(msg.content)
                 self._control.task_done()
+                self._control_waiters.clear()
                 return(start_msg.disp_startup(msg))
 
             elif msg.type == c.MESSAGE_SERIAL_ERROR:
@@ -691,12 +694,13 @@ class ANTQueue(Queue):
         super().__init__()
         self.channel_number = channel_num
     
-class QueueManager:
+class QueueManager(Queue):
     """
     Manage multiple queues across threads to ensure messages and information
     is correctly being translated and recieved across channels
     """
     def __init__(self):
+        super().__init__()
         self.channel_queues = None
 
     def add_queue(self, channel, queue):
