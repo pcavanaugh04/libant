@@ -167,20 +167,21 @@ class Pump(threading.Thread):
 
                     except ex.RxSearchTimeout as e:
                         self._onFailure(e)
-                        if not self.first_message_flags[e.channel]:
-                            self._out.get()
-                            self._out.task_done()
-                            sleep(0.01)
-                            self._out.put(e)
-                            self._out.join()
+                        com_channel = self._out.channels[e.channel]
+                        if not com_channel.first_message_flag:
+                            com_channel._out.get()
+                            self._out.remove_task(e.channel)
+                            sleep(0.1)
+                            print(f"Timeout Occurred! on channel: {e.channel}")
+                            self._out.output_msg(e, e.channel)
 
                     except Exception as e:
                         traceback.print_exc()
                         self._onFailure(e)
 
-        self._config_waiters.clear()
-        self._control_waiters.clear()
-        self._tx_waiters.clear()
+        self._config.waiters.clear()
+        self._control.waiters.clear()
+        self._tx.waiters.clear()
         sleep(0.1)
 
     def process_read_message(self, msg):
@@ -191,7 +192,6 @@ class Pump(threading.Thread):
             if w.message.type == c.MESSAGE_CHANNEL_REQUEST:
                 if w.message.content[1] == msg.type:
                     try:
-                        print("Section 1")
                         msg = w.callback(msg.content)
                     except Exception as e:
                         raise e
@@ -207,7 +207,6 @@ class Pump(threading.Thread):
                         w.message.type == msg.message_ID,
                         w.callback is not None]):
                     try:
-                        print("Section 2")
                         out = w.callback(msg, w.message.type)
                     except Exception as e:
                         raise e
@@ -224,7 +223,6 @@ class Pump(threading.Thread):
                 # print(f"waiter type: {w.message.type} || message: {msg.type}")
                 if w.message.type == msg.message_ID and w.callback is not None:
                     try:
-                        print("Section 3")
                         out = w.callback(msg, w.message.type)
                     except Exception as e:
                         raise e
@@ -236,7 +234,6 @@ class Pump(threading.Thread):
 
             # msg.content[1] == c.MESSAGE_RF_EVENT:
             try:
-                print("Section 4")
                 out = msg.process_event()
             except Exception as e:
                 raise e
@@ -247,10 +244,18 @@ class Pump(threading.Thread):
                 # TODO: These two blocks will have to be updated to new architecture
                 if (msg.content[1] == c.MESSAGE_RF_EVENT
                         and msg.content[2] == c.EVENT_CHANNEL_CLOSED):
-                    self._out.get()
-                    self._out.task_done()
-                    # This works for 1 channel handling at a time...
-                    self.first_message_flags[msg.channel] = False
+                    print(f"contents of out queue: {list(self._out.queue)}")
+                    print(f"number of tasks left in queue {self._out.qsize()}")
+                    try:
+                        self._out.get(block=False)
+                    except Empty:
+                        pass
+                    else:
+                        self._out.task_done()
+                    finally:
+                        # This works for 1 channel handling at a time...
+                        com_channel = self._out.channels[msg.channel]
+                        com_channel.first_message_flag = False
 
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
                     self._tx.task_done()
@@ -635,8 +640,7 @@ class Channel(threading.Thread):
         else:
             sleep(0.5)
 
-        self._out.put("Temp String")
-        self._out.join()
+        print("Do we get here?")
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
 
@@ -660,7 +664,9 @@ class Channel(threading.Thread):
         else:
             # Close channel if timeout is recieved
             if isinstance(err, ex.RxSearchTimeout):
-                self.outputs.task_done()
+                self._out.task_done()
+                self._out.put("Temp String")
+                self._out.join()
                 self.close(timeout=True)
                 return
                 # TODO: Emit signal to indicate channel has timed out
@@ -672,6 +678,9 @@ class Channel(threading.Thread):
         self.status = self.get_status(disp=True)
 
         # TODO: add continuous run loop after proper config
+        while True:
+            sleep(0.1)
+            pass
 
     def get_ID(self, disp=False):
         """Request channel ID properties from node on established connection.
@@ -846,7 +855,6 @@ class QueueManager(Queue):
 
         else:
             self.put(message)
-            self.join()
 
 
 class Waiter:
@@ -856,20 +864,3 @@ class Waiter:
         self.message = message
         self.callback = message.callback
         self.channel = channel
-
-    # @channels.getter
-    # def add_channels(self, channel_num):
-    #     return self._node._channels[channel_num]
-
-    # def add_queue(self, channel, queue):
-    #     """Add queue to queue manager from channel.
-    #     """
-    #     if self.channels is not None:
-    #         self.channels[channel].queue = queue
-
-    #     else:
-    #         print("Error! QueueManager has not been properly initialized")
-
-    # def remove_queue(self, channel):
-    #     """Remove channel from queue manager"""
-    #     self.channel_queues[channel] = None
