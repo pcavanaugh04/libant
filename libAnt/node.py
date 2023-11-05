@@ -3,7 +3,7 @@ from queue import Queue, Empty
 from time import sleep
 from datetime import datetime
 
-from libAnt.drivers.driver import Driver, DriverException
+from libAnt.drivers.driver import Driver, USBDriver, DriverException
 import libAnt.message as m
 import libAnt.constants as c
 import libAnt.exceptions as ex
@@ -290,12 +290,10 @@ class Pump(threading.Thread):
 
 
 class Node:
-    def __init__(self, driver: Driver,
-                 onSuccess=None,
+    def __init__(self, onSuccess=None,
                  onFailure=None,
                  name: str = None,
                  debug=False):
-        self._driver = driver
         self._name = name
         self._init = []
         self._pump = None
@@ -309,6 +307,20 @@ class Node:
         self.onSuccess = onSuccess
         self.onFailure = onFailure
         self.messages = []
+
+        try:
+            # Try Opening Node with PID corresponding to ANT USB-m device
+            self.driver = USBDriver(vid=0x0FCF, pid=0x1009)
+
+        except DriverException:
+            try:
+                # If failed, try with PID corresponding to ANT USB-2 device
+                self.node = USBDriver(vid=0x0FCF, pid=0x1008)
+
+            except DriverException as e:
+                # If this fails, the device is probably not plugged in
+                print(e)
+                raise e
 
     @property
     def channels(self):
@@ -337,6 +349,22 @@ class Node:
             self.onSuccess = onSuccess
         if onFailure:
             self.onFailure = onFailure
+
+        try:
+            # Try Opening Node with PID corresponding to ANT USB-m device
+            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1009),
+                             debug=False)
+
+        except DriverException:
+            try:
+                # If failed, try with PID corresponding to ANT USB-2 device
+                self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008),
+                                 debug=True)
+            except DriverException as e:
+                # If this fails, the device is probably not plugged in
+                print(e)
+                return
+
         self._pump = Pump(self._driver,
                           self.config_manager,
                           self.control_manager,
