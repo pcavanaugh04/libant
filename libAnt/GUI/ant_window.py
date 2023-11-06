@@ -4,7 +4,7 @@ Created on Tue Mar 14 18:14:15 2023
 
 @author: patri
 """
-from PyQt5.QtWidgets import QMainWindow, QApplication
+from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget
 from PyQt5 import uic
 from PyQt5.QtCore import QTimer
 import sys
@@ -30,8 +30,9 @@ class ANTWindow(QMainWindow):
         path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
         self.UI_elements = uic.loadUi(path, self)
         self.node = None
-
+        self.search_window = None
         # Define Signal/Slot Relationship for emitting success and failure
+
         class HandlerObject(QObject):
             success_signal = pyqtSignal('PyQt_PyObject')
             failure_signal = pyqtSignal('PyQt_PyObject')
@@ -96,6 +97,10 @@ class ANTWindow(QMainWindow):
         else:
             QTimer.singleShot(100, self.close_application)
 
+        # Close search selector if visible
+        if self.search_window is not None and self.search_window.isVisible():
+            self.search_window.close()
+
         # Remove Package Additions to Path
         sys.path.pop(0)
         event.accept()
@@ -106,17 +111,48 @@ class ANTWindow(QMainWindow):
         logging.getLogger().root.handlers.clear()
 
     def showEvent(self, event):
-        if self.node is not None:
+        if self.node is not None and not self.node.isRunning():
             start_thread = ANTWorker(self,
                                      self.node.start,
                                      self.obj.callback,
                                      self.obj.error_callback)
             start_thread.done_signal.connect(self.device_startup)
+            start_thread.done_signal.connect(self.open_search_selection)
             start_thread.start()
+
         event.accept()
 
     def open_search_selection(self):
-        pass
+        """Open UI and start channel search function for ANT devices.
+
+        Method opens all available channels on Node and waits for successful
+        connection to any ANT devices in proximity
+        """
+
+        # Generate a new session of ANT selector window
+        self.search_window = ANTSelector(self)
+        self.search_window.show()
+        profile = self.channel_profile_combo.currentText()
+
+        # Open all available channels on the node
+        for i in range(self.node.max_channels):
+            self.open_channel(channel=i, profile=profile)
+
+    def open_channel(self, channel=0, profile='FE-C'):
+        self.open_thread = ANTWorker(self,
+                                     self.node.open_channel,
+                                     channel,
+                                     profile=profile)
+
+        # TODO: go to node level connection method to make sure it can handle 7 requests at once
+        # 31 oct 2023 Goal - Dive into the node spot
+        # TODO: Need an intermediate connection step to indicate a successful handshake
+        # self.open_thread.done_signal.connect(self.set_connection_status)
+        # self.open_thread.done_signal.connect(
+        #     functools.partial(self.set_config, channel))
+        self.open_thread.start()
+
+        # Depreciated open channel method
         #     self.channel_add_num = int(self.channel_number_combo.currentText())
         #     channel_profile = str(self.channel_profile_combo.currentText())
         #     # self.thread_parent = QObject()
@@ -267,3 +303,37 @@ class ANTWorker(QThread):
     def run(self):
         success = self.run_function(*self.args, **self.kwargs)
         self.done_signal.emit(success)
+
+
+class ANTSelector(QWidget):
+    """Create window for viewing available ANT devices for connection to
+       select the desired one for connection
+    """
+    close_signal = pyqtSignal()
+
+    def __init__(self, node):
+
+        self.start_time = datetime.now()
+        self.node = node
+
+        # Initialize superclass
+        super(QWidget, self).__init__()
+        # Load the graphical layout
+        path = "libAnt/GUI/ant_selection.ui"
+        self.UI_elements = uic.loadUi(path, self)
+
+        # Button Connections
+        self.select_device.clicked.connect(self.connect_device)
+        self.cancel_selection.clicked.connect(self.cancel)
+        # self.update_timer = UpdateTimer(0.25, self.update)
+        # self.update_timer.internal_timer.stop()
+
+    def update(self):
+        # TODO: Update method to refresh available devices on the GUI
+        pass
+
+    def connect_device(self):
+        pass
+
+    def cancel(self):
+        pass

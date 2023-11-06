@@ -868,7 +868,7 @@ class ChannelResponseMessage(Message):
                 raise e.InvalidMessage()
 
             case c.EVENT_CHANNEL_CLOSED:
-                return("Channel: {msg.channeL} Close Success")
+                return(f"Channel: {self.channel} Close Success")
 
             case c.EVENT_TRANSFER_TX_COMPLETED:
                 return("Tx Success")

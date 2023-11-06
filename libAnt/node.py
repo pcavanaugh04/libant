@@ -170,11 +170,16 @@ class Pump(threading.Thread):
                         self._onFailure(e)
                         com_channel = self._out.channels[e.channel]
                         if not com_channel.first_message_flag:
+                            print("-----------IN Exception Handling-------------")
+                            print(
+                                f"Channel Out queue contents: {list(com_channel._out.queue)}")
+                            print(
+                                f"tasks left in channel out queue {com_channel._out.qsize()}")
                             com_channel._out.get()
                             self._out.remove_task(e.channel)
                             sleep(0.1)
+                            com_channel._out.put(e)
                             print(f"Timeout Occurred! on channel: {e.channel}")
-                            self._out.output_msg(e, e.channel)
 
                     except Exception as e:
                         traceback.print_exc()
@@ -245,6 +250,7 @@ class Pump(threading.Thread):
                 # TODO: These two blocks will have to be updated to new architecture
                 if (msg.content[1] == c.MESSAGE_RF_EVENT
                         and msg.content[2] == c.EVENT_CHANNEL_CLOSED):
+                    com_channel = self._out.channels[msg.channel]
                     print(f"contents of out queue: {list(self._out.queue)}")
                     print(f"number of tasks left in queue {self._out.qsize()}")
                     try:
@@ -255,7 +261,13 @@ class Pump(threading.Thread):
                         self._out.task_done()
                     finally:
                         # This works for 1 channel handling at a time...
-                        com_channel = self._out.channels[msg.channel]
+                        print("IN FINALLY STATEMENT")
+                        print(
+                            f"Channel Out queue contents: {list(com_channel._out.queue)}")
+                        print(
+                            f"tasks left in channel out queue {com_channel._out.qsize()}")
+                        # com_channel._out.get()
+                        self._out.remove_task(msg.channel)
                         com_channel.first_message_flag = False
 
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
@@ -311,15 +323,16 @@ class Node:
 
         try:
             # Try Opening Node with PID corresponding to ANT USB-m device
-            self.driver = USBDriver(vid=0x0FCF, pid=0x1009)
+            self._driver = USBDriver(vid=0x0FCF, pid=0x1009)
 
         except DriverException:
             try:
                 # If failed, try with PID corresponding to ANT USB-2 device
-                self.node = USBDriver(vid=0x0FCF, pid=0x1008)
+                self._driver = USBDriver(vid=0x0FCF, pid=0x1008)
 
             except DriverException as e:
                 # If this fails, the device is probably not plugged in
+                self._driver = None
                 raise e
 
     @property
@@ -598,6 +611,7 @@ class Channel(threading.Thread):
                  channel_search_timeout=30):
 
         super().__init__()
+        self._stop_event = threading.Event()
         self.number = channel_num
         # Queue Managers for device level control
         self.cfig_manager = cfig_manager
@@ -653,47 +667,53 @@ class Channel(threading.Thread):
         else:
             sleep(0.5)
 
-        print("Do we get here?")
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
+        # self = None
 
     def run(self):
         """Run method for channel thread. Process inputs and outputs to main
         device thread"""
+        while not self._stop_event.is_set():
+            # Channel creation starts with waiting for first successful message
+            self._out.put("Blocking until First Message")
+            self._out.join()
 
-        # Channel creation starts with waiting for first successful message
-        self._out.put("Blocking until First Message")
-        self._out.join()
+            # Thread will reactivate once an item has been recognized and removed
+            # from the queue. If the channel times out, the pump will place
+            # the error message back into the output queue
 
-        # Thread will reactivate once an item has been recognized and removed
-        # from the queue. If the channel times out, the pump will place
-        # the error message back into the output queue
+            try:
+                err = self._out.get(block=True, timeout=0.5)
 
-        try:
-            err = self._out.get(block=True, timeout=0.5)
-        except Empty:
-            pass
+            except Empty:
+                print("Were in the passing statement!")
+                pass
 
-        else:
-            # Close channel if timeout is recieved
-            if isinstance(err, ex.RxSearchTimeout):
-                self._out.task_done()
-                self._out.put("Temp String")
-                self._out.join()
-                self.close(timeout=True)
-                return
-                # TODO: Emit signal to indicate channel has timed out
+            else:
+                # Close channel if timeout is recieved
+                if isinstance(err, ex.RxSearchTimeout):
+                    # self._out.put("Temp String")
+                    # self._out.join()
+                    print("Made it to the close statement")
+                    self.close(timeout=True)
+                    print("Just before run return statement")
+                    return
+                    # TODO: Emit signal to indicate channel has timed out
 
-        self.onSuccess("First Message Recieved!\n"
-                       f"Idenfiying Channel {self.number} Properties...")
-        # Identify channel parameters
-        self.id = self.get_ID(disp=True)
-        self.status = self.get_status(disp=True)
+            self.onSuccess("First Message Recieved!\n"
+                           f"Idenfiying Channel {self.number} Properties...")
+            # Identify channel parameters
+            self.id = self.get_ID(disp=True)
+            self.status = self.get_status(disp=True)
 
-        # TODO: add continuous run loop after proper config
-        while True:
-            sleep(0.1)
-            pass
+            # TODO: add continuous run loop after proper config
+            while True:
+                sleep(0.1)
+                pass
+
+    def stop(self):
+        self._stop_event.set()
 
     def get_ID(self, disp=False):
         """Request channel ID properties from node on established connection.
