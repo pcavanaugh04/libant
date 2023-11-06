@@ -43,7 +43,7 @@
     <string>Available ANT Device IDs</string>
    </property>
   </widget>
-  <widget class="QPushButton" name="select_device">
+  <widget class="QPushButton" name="select_device_button">
    <property name="geometry">
     <rect>
      <x>270</x>
@@ -69,7 +69,7 @@
     <string>Select Device</string>
    </property>
   </widget>
-  <widget class="QPushButton" name="cancel_selection">
+  <widget class="QPushButton" name="cancel_selection_button">
    <property name="geometry">
     <rect>
      <x>270</x>

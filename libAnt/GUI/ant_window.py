@@ -71,7 +71,7 @@ class ANTWindow(QMainWindow):
         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
         # self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
-        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
+        self.dev_profiles = ['HR', 'FE-C', 'PWR', '']
 
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
@@ -79,6 +79,7 @@ class ANTWindow(QMainWindow):
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(self.send_grade_msg)
 
+        # Signal Connections
         self.init_node(debug=True)
 
     def init_node(self, debug=False):
@@ -147,6 +148,7 @@ class ANTWindow(QMainWindow):
             device_number = None
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
+        self.search_window.selected_signal.connect(self.channel_startup)
 
     # def open_channel(self, channel=0, profile='FE-C'):
     #     self.open_thread = ANTWorker(self,
@@ -187,19 +189,15 @@ class ANTWindow(QMainWindow):
             self.message_viewer.append("Error in Device Startup! "
                                        "Relaunch Program to try again")
 
-    def channel_startup(self, success):
-        if success:
-            self.status_ch_number_combo.addItem(str(self.channel_add_num))
-            ch = self.node.channels[self.channel_add_num]
-            self.channel_type_box.setText(str(ch.status.get("channel_type")))
-            self.network_number_box.setText(
-                str(ch.status.get("network_number")))
-            self.device_id_box.setText(str(ch.id.get("device_number")))
-            self.device_type_box.setText(str(ch.id.get("device_type")))
-            self.channel_state_box.setText(str(ch.status.get("channel_state")))
-        else:
-            self.message_viewer.append("Error in Channel Startup! "
-                                       "Check Parameters and try again")
+    def channel_startup(self, channel_num):
+        self.status_ch_number_combo.addItem(str(channel_num))
+        ch = self.node.channels[channel_num]
+        self.channel_type_box.setText(str(ch.status.get("channel_type")))
+        self.network_number_box.setText(
+            str(ch.status.get("network_number")))
+        self.device_id_box.setText(str(ch.id.get("device_number")))
+        self.device_type_box.setText(str(ch.id.get("device_type")))
+        self.channel_state_box.setText(str(ch.status.get("channel_state")))
 
     def close_channel(self):
         channel_num = int(self.status_ch_number_combo.currentText())
@@ -334,9 +332,9 @@ class ANTSelector(QWidget):
 
         # Button Connections
         self.select_device_button.clicked.connect(self.select_device)
-        self.cancel_selection.clicked.connect(self.cancel)
-        self.update_timer = QTimer()
-        self.update_timer.timeout.connect(self.update)
+        self.cancel_selection_button.clicked.connect(self.cancel)
+        # self.update_timer = QTimer()
+        # self.update_timer.timeout.connect(self.update)
         # self.update_timer.internal_timer.stop()
 
     def update(self):
@@ -425,12 +423,9 @@ class ANTSelector(QWidget):
         None.
 
         """
-        # Specify the channel object to observe
-        channel = self.node.channels[channel_num]
         # Initailize the waiter thread
         wait_thread = ANTWorker(self, self.wait_for_device_ID,
-                                self.node.channels[channel_num],
-                                channel.search_timeout + 1)
+                                self.node.channels[channel_num])
         # Connect the event handler to the completion of the waiting period.
         # the search will either timeout or add a successful connection
         wait_thread.done_signal.connect(
@@ -448,6 +443,7 @@ class ANTSelector(QWidget):
             if channel.id is not None:
                 return channel
             time.sleep(0.1)
+        self.node.clear_channel(channel.number)
         # print("End of wait for device ID!")
 
     def handle_pairing_event(self, channel_num, channel):
@@ -456,9 +452,12 @@ class ANTSelector(QWidget):
         print(f"Channel Number: {channel_num}, Channel Object: {channel}")
         if channel is not None:
             # Add successful channel pairing to device field
+            # self.available_devices_list.addItem(
+            #     f"{channel.id['device_number']}",
+            #     userData=channel)
+            # TODO: Look for a way to tie labels and object to one field
             self.available_devices_list.addItem(
-                f"{channel.id['device_number']}",
-                userData=channel)
+                f"{channel.id['device_number']}")
 
         else:
             pass
