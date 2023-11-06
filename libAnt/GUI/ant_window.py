@@ -9,10 +9,12 @@ from PyQt5 import uic
 from PyQt5.QtCore import QTimer
 import sys
 import os
+import time
 from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import DriverException
+import libAnt.exceptions as e
 import logging
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
@@ -58,13 +60,19 @@ class ANTWindow(QMainWindow):
                 self.avg_power_box.setText(str(trainer_msg.avg_power))
 
             msg = str(msg)
+
+            # if "ready to clear channel" in msg:
+            #     self.node.clear_channel(int(msg[-1]), timeout=True)
+
             self.node.messages.append(msg)
             self.message_viewer.append(msg)
 
         self.obj.success_signal.connect(signal_handler)
         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
-        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
+        # self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
+        self.dev_profiles = ['HR', 'FE-C', 'PWR', 'HR', '']
+
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
         self.close_channel_button.clicked.connect(self.close_channel)
@@ -294,7 +302,7 @@ class ANTWindow(QMainWindow):
 
 class ANTWorker(QThread):
 
-    done_signal = pyqtSignal(bool)
+    done_signal = pyqtSignal("PyQt_PyObject")
 
     def __init__(self, parent, fn, *args, **kwargs):
         super().__init__(parent=parent)
@@ -358,10 +366,11 @@ class ANTSelector(QWidget):
         # Open all available channels on the node
         for i in range(self.node.max_channels):
             if self.node.channels[i] is None:
-                self.open_thread = ANTWorker(self,
-                                             self.node.open_channel,
-                                             i,
-                                             profile=profile)
+                print(f"Opening on channel: {i}")
+                open_thread = ANTWorker(self,
+                                        self.node.open_channel,
+                                        i,
+                                        profile=profile)
 
         # TODO: go to node level connection method to make sure it can handle 7 requests at once
         # 31 oct 2023 Goal - Dive into the node spot
@@ -370,15 +379,44 @@ class ANTSelector(QWidget):
         # self.open_thread.done_signal.connect(
         #     functools.partial(self.set_config, channel))
 
-        # self.open_thread.done_signal.connect(self.wait_for_device_connection)
-                self.open_thread.start()
+                open_thread.done_signal.connect(
+                    self.wait_for_device_connection)
+                open_thread.start()
         self.show()
 
-    def wait_for_device_connection(self):
-        wait_thread = ANTWorker()
+    def wait_for_device_connection(self, channel_num):
+        channel = self.node.channels[channel_num]
 
-    def wait_for_device_ID(self, timeout):
-        pass
+        wait_thread = ANTWorker(self, self.wait_for_device_ID,
+                                self.node.channels[channel_num],
+                                channel.search_timeout + 1)
+        wait_thread.done_signal.connect(
+            functools.partial(self.handle_pairing_event, channel_num))
+        wait_thread.start()
+        print(f"End of wait for device connection on channel: {channel_num}")
+
+    def wait_for_device_ID(self, channel, timeout):
+        print(
+            f"Beginning of wait method on channel: {channel}. Timeout: {timeout}")
+        while channel.is_alive():
+            # print(f"{channel}")
+            if channel.id is not None:
+                return channel
+            time.sleep(0.1)
+        print("End of wait for device ID!")
+
+    def handle_pairing_event(self, channel_num, channel):
+
+        print("--------------In pairing event Handler----------------")
+        print(f"Channel Number: {channel_num}, Channel Object: {channel}")
+        if channel is not None:
+            # Add successful channel pairing to device field
+            self.available_devices_list.addItem(
+                f"{channel.id['device_number']}")
+
+        else:
+            print("Unsuccessful pairing!")
+        # print("End of handling connection event")
 
     def closeEvent(self, event):
         event.accept()

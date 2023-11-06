@@ -395,20 +395,20 @@ class Node:
                      device_type=0,
                      channel_frequency=2457,
                      channel_msg_freq=4,
-                     channel_search_timeout=5,
+                     channel_search_timeout=8,
                      **kwargs):
         # Some input checking
         if channel_num > self.max_channels or channel_num < 0:
             print("Error: Channel assignment exceeds device capabilities")
-            return False
+            return
 
         if network_num > self.max_networks or network_num < 0:
             print("Error: Network assignment exceeds device capabilities")
-            return False
+            return
 
         if self.channels[channel_num] is not None:
             print("Error: Channel is already in use")
-            return False
+            return
 
         if 'profile' in kwargs:
             match kwargs.get('profile'):
@@ -441,7 +441,7 @@ class Node:
 
         except Exception as e:
             self.onFailure(e)
-            return False
+            return
 
         self.onSuccess(f"Channel {channel_num} Configuration Success!\n"
                        f"Attempting to Open Channel {channel_num}...")
@@ -450,7 +450,7 @@ class Node:
 
     # TODO: Make this channel attribute?
     def clear_channel(self, channel_num, timeout=False):
-        del self.channels[channel_num]
+        # del self.channels[channel_num]
         self.channels[channel_num] = None
         return True
 
@@ -602,7 +602,7 @@ class Channel(threading.Thread):
                  device_type=0,
                  channel_frequency=2457,
                  channel_msg_freq=4,
-                 channel_search_timeout=30):
+                 channel_search_timeout=10):
 
         super().__init__()
         self._stop_event = threading.Event()
@@ -653,7 +653,7 @@ class Channel(threading.Thread):
         # Start Channel thread for processing I/O messages
         self.start()
 
-        return True
+        return self.number
 
     def close(self, timeout=False):
         # timeout message will close channel automatically, so only send close
@@ -668,6 +668,7 @@ class Channel(threading.Thread):
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
+        self.onFailure(f"ready to clear channel {self.number}")
         # Stop thread execution
         self.stop()
         # self = None

@@ -229,7 +229,7 @@ class ChannelSearchTimeoutMessage(Message):
     device = time/2.5
     """
 
-    def __init__(self, channel: int, timeout: int = 30):
+    def __init__(self, channel: int, timeout: int = 10):
         """
         Constructor for set messaging period message.
 
@@ -245,7 +245,7 @@ class ChannelSearchTimeoutMessage(Message):
         None
 
         """
-        content = bytes([channel, int(timeout / 2.5)])
+        content = bytes([channel, int(timeout / 2.5 / 2.5)])
         super().__init__(c.MESSAGE_CHANNEL_SEARCH_TIMEOUT, content)
         self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT
