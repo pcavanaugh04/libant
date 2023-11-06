@@ -3,7 +3,8 @@ from queue import Queue, Empty
 from time import sleep
 from datetime import datetime
 
-from libAnt.drivers.driver import Driver, USBDriver, DriverException
+from libAnt.drivers.driver import Driver, DriverException
+from libAnt.drivers.usb import USBDriver
 import libAnt.message as m
 import libAnt.constants as c
 import libAnt.exceptions as ex
@@ -319,7 +320,6 @@ class Node:
 
             except DriverException as e:
                 # If this fails, the device is probably not plugged in
-                print(e)
                 raise e
 
     @property

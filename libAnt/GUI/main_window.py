@@ -10,7 +10,7 @@ import os
 from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
-from libAnt.drivers.usb import USBDriver, DriverException
+from libAnt.drivers.usb import DriverException
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
 
@@ -21,12 +21,10 @@ class MainWindow(QMainWindow):
         # %% Load UI elements
         self.program_start_time = datetime.now()
 
-        self.node = Node(debug=True)
-
         # Initialize superclass
         QMainWindow.__init__(self)
         # Load the graphical layout
-        path = os.path.join(os.getcwd(), "GUI", "ant_UI.ui")
+        path = os.path.join(os.getcwd(), "..", "libAnt", "ant_UI.ui")
         self.UI_elements = uic.loadUi(path, self)
 
         # Define Signal/Slot Relationship for emitting success and failure
@@ -67,6 +65,15 @@ class MainWindow(QMainWindow):
         self.close_channel_button.clicked.connect(self.close_channel)
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(self.send_grade_msg)
+
+        self.init_node(debug=True)
+
+    def init_node(self, debug=False):
+        try:
+            self.node = Node(debug=debug)
+        except DriverException as e:
+            print(e)
+            return
 
     def check_success(self, success):
         if success:

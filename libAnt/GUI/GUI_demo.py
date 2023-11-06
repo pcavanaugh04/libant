@@ -9,7 +9,7 @@ import sys
 import os
 
 parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
-sys.path.append(parent_dir)
+sys.path.append(os.path.join(parent_dir, "libAnt"))
 
 from PyQt5.QtWidgets import QApplication
 from GUI.main_window import MainWindow
