@@ -392,7 +392,7 @@ class Node:
                      network_num: int = 0,
                      network_key=c.ANTPLUS_NETWORK_KEY,
                      channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
-                     device_type=0,
+                     device_type=None,
                      channel_frequency=2457,
                      channel_msg_freq=4,
                      channel_search_timeout=8,
@@ -422,6 +422,9 @@ class Node:
                     device_type = 0x78
                     channel_msg_freq = 4.06
 
+        if device_number := kwargs.get("device_ID", None) is not None:
+            device_type = 0
+
         # Create channel object in node's channels list
         try:
             self.channels[channel_num] = Channel(self.config_manager,
@@ -435,6 +438,7 @@ class Node:
                                                  network_key,
                                                  channel_type,
                                                  device_type,
+                                                 device_number,
                                                  channel_frequency,
                                                  channel_msg_freq,
                                                  channel_search_timeout)
@@ -600,6 +604,7 @@ class Channel(threading.Thread):
                  network_key=c.ANTPLUS_NETWORK_KEY,
                  channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
                  device_type=0,
+                 device_number=0,
                  channel_frequency=2457,
                  channel_msg_freq=4,
                  channel_search_timeout=10):
@@ -632,13 +637,15 @@ class Channel(threading.Thread):
         self.first_message_flag = False
         self.id = None
         self.status = None
+        self.device_number = device_number
 
         self.cfig_manager.put(m.SetNetworkKeyMessage(self.network,
                                                      self.network_key))
         self.cfig_manager.put(m.AssignChannelMessage(self.number,
                                                      self._type))
         self.cfig_manager.put(m.SetChannelIdMessage(self.number,
-                                                    device_type=self.device_type))
+                                                    device_type=self.device_type,
+                                                    device_number=self.device_number))
         self.cfig_manager.put(m.SetChannelRfFrequencyMessage(self.number,
                                                              self.frequency))
         self.cfig_manager.put(m.ChannelMessagingPeriodMessage(self.number,
@@ -668,9 +675,9 @@ class Channel(threading.Thread):
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
-        self.onFailure(f"ready to clear channel {self.number}")
         # Stop thread execution
         self.stop()
+        return self.number
         # self = None
 
     def run(self):

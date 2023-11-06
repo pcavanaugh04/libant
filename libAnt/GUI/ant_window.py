@@ -71,7 +71,7 @@ class ANTWindow(QMainWindow):
         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
         # self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
-        self.dev_profiles = ['HR', 'FE-C', 'PWR', 'HR', '']
+        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
 
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
@@ -142,11 +142,11 @@ class ANTWindow(QMainWindow):
         profile = self.channel_profile_combo.currentText()
         if profile == '':
             profile = None
-        device_ID = self.device_ID_field.text()
-        if device_ID == '':
-            device_ID = None
+        device_number = self.device_ID_field.text()
+        if device_number == '':
+            device_number = None
         self.search_window.open_search_mode(profile=profile,
-                                            device_ID=device_ID)
+                                            device_number=device_number)
 
     # def open_channel(self, channel=0, profile='FE-C'):
     #     self.open_thread = ANTWorker(self,
@@ -319,7 +319,7 @@ class ANTSelector(QWidget):
     """Create window for viewing available ANT devices for connection to
        select the desired one for connection
     """
-    close_signal = pyqtSignal()
+    selected_signal = pyqtSignal(int)
 
     def __init__(self, node):
 
@@ -333,7 +333,7 @@ class ANTSelector(QWidget):
         self.UI_elements = uic.loadUi(path, self)
 
         # Button Connections
-        self.select_device.clicked.connect(self.connect_device)
+        self.select_device_button.clicked.connect(self.select_device)
         self.cancel_selection.clicked.connect(self.cancel)
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update)
@@ -344,8 +344,20 @@ class ANTSelector(QWidget):
 
         pass
 
-    def connect_device(self):
-        pass
+    def select_device(self):
+        # Specify the channel of the device the user wants to connect to
+        device_channel = self.available_devices_list.selectedItem()
+
+        # Close the other channels
+        # TODO: This may cause issues if trying to close in search mode. Will
+        # need to verify with queue sequence
+        for channel in self.node.channels:
+            if channel is not None and channel.number != device_channel.number:
+                close_thread = ANTWorker(self, channel.close)
+                close_thread.done_signal.connect(self.node.clear_channel)
+
+        # Emit selected device channel to main program
+        self.selected_signal.emit(device_channel)
 
     def cancel(self):
         print("Device Selection Cancelled!")
@@ -362,48 +374,81 @@ class ANTSelector(QWidget):
         event.accept()
         pass
 
-    def open_search_mode(self, profile=None, device_ID=None):
+    def open_search_mode(self, profile=None, device_number=None):
+        """
+        Initiates device search and displays avaialbe connections on pop-up.
+
+        Parameters
+        ----------
+        profile : str, optional
+            The desired device profile of the search opearation. The node will
+            search for all availiable devices of this profile.
+        device_ID : int, optional
+            The desired device ID for search opearation. The program will
+            search for to all available channels with this device ID.
+
+        Returns
+        -------
+        None.
+
+        """
+
         # Open all available channels on the node
         for i in range(self.node.max_channels):
+            # Only attempt a connection if not already initialized
             if self.node.channels[i] is None:
-                print(f"Opening on channel: {i}")
                 open_thread = ANTWorker(self,
                                         self.node.open_channel,
                                         i,
-                                        profile=profile)
-
-        # TODO: go to node level connection method to make sure it can handle 7 requests at once
-        # 31 oct 2023 Goal - Dive into the node spot
-        # TODO: Need an intermediate connection step to indicate a successful handshake
-        # self.open_thread.done_signal.connect(self.set_connection_status)
-        # self.open_thread.done_signal.connect(
-        #     functools.partial(self.set_config, channel))
-
+                                        profile=profile,
+                                        device_number=device_number)
+                # Connect open to waiter function for device connection
                 open_thread.done_signal.connect(
                     self.wait_for_device_connection)
                 open_thread.start()
+        # Show selector GUI window
         self.show()
 
     def wait_for_device_connection(self, channel_num):
-        channel = self.node.channels[channel_num]
+        """Wait for a device connection after opening a channel
 
+        Slot for open_thread done_signal, which will provide a status and 
+        channel number of successful channel open event
+
+        Parameters
+        ----------
+        channel_num : int
+            number of channel on node that the waiter thread will track.
+
+        Returns
+        -------
+        None.
+
+        """
+        # Specify the channel object to observe
+        channel = self.node.channels[channel_num]
+        # Initailize the waiter thread
         wait_thread = ANTWorker(self, self.wait_for_device_ID,
                                 self.node.channels[channel_num],
                                 channel.search_timeout + 1)
+        # Connect the event handler to the completion of the waiting period.
+        # the search will either timeout or add a successful connection
         wait_thread.done_signal.connect(
             functools.partial(self.handle_pairing_event, channel_num))
         wait_thread.start()
-        print(f"End of wait for device connection on channel: {channel_num}")
+        # print(f"End of wait for device connection on channel: {channel_num}")
 
-    def wait_for_device_ID(self, channel, timeout):
-        print(
-            f"Beginning of wait method on channel: {channel}. Timeout: {timeout}")
+    def wait_for_device_ID(self, channel):
+        print(f"Beginning of wait method on channel: {channel}.")
+        # Channels are thread objects and can be monitored. If search times out
+        # the thread will terminate
         while channel.is_alive():
-            # print(f"{channel}")
+            # Monitor if the ID attribute has been updated, indicating a
+            # successful connection handshake
             if channel.id is not None:
                 return channel
             time.sleep(0.1)
-        print("End of wait for device ID!")
+        # print("End of wait for device ID!")
 
     def handle_pairing_event(self, channel_num, channel):
 
@@ -412,11 +457,12 @@ class ANTSelector(QWidget):
         if channel is not None:
             # Add successful channel pairing to device field
             self.available_devices_list.addItem(
-                f"{channel.id['device_number']}")
+                f"{channel.id['device_number']}",
+                userData=channel)
 
         else:
-            print("Unsuccessful pairing!")
-        # print("End of handling connection event")
+            pass
+            # print("Unsuccessful pairing!")
 
     def closeEvent(self, event):
         event.accept()
