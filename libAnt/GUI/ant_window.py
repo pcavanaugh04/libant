@@ -64,7 +64,7 @@ class ANTWindow(QMainWindow):
         self.obj.success_signal.connect(signal_handler)
         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
-        self.dev_profiles = ['FE-C', 'PWR', 'HR']
+        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
         self.close_channel_button.clicked.connect(self.close_channel)
@@ -130,19 +130,21 @@ class ANTWindow(QMainWindow):
         """
 
         # Generate a new session of ANT selector window
-        self.search_window = ANTSelector(self)
-        self.search_window.show()
+        self.search_window = ANTSelector(self.node)
         profile = self.channel_profile_combo.currentText()
+        if profile == '':
+            profile = None
+        device_ID = self.device_ID_field.text()
+        if device_ID == '':
+            device_ID = None
+        self.search_window.open_search_mode(profile=profile,
+                                            device_ID=device_ID)
 
-        # Open all available channels on the node
-        for i in range(self.node.max_channels):
-            self.open_channel(channel=i, profile=profile)
-
-    def open_channel(self, channel=0, profile='FE-C'):
-        self.open_thread = ANTWorker(self,
-                                     self.node.open_channel,
-                                     channel,
-                                     profile=profile)
+    # def open_channel(self, channel=0, profile='FE-C'):
+    #     self.open_thread = ANTWorker(self,
+    #                                  self.node.open_channel,
+    #                                  channel,
+    #                                  profile=profile)
 
         # TODO: go to node level connection method to make sure it can handle 7 requests at once
         # 31 oct 2023 Goal - Dive into the node spot
@@ -150,7 +152,7 @@ class ANTWindow(QMainWindow):
         # self.open_thread.done_signal.connect(self.set_connection_status)
         # self.open_thread.done_signal.connect(
         #     functools.partial(self.set_config, channel))
-        self.open_thread.start()
+        # self.open_thread.start()
 
         # Depreciated open channel method
         #     self.channel_add_num = int(self.channel_number_combo.currentText())
@@ -325,15 +327,59 @@ class ANTSelector(QWidget):
         # Button Connections
         self.select_device.clicked.connect(self.connect_device)
         self.cancel_selection.clicked.connect(self.cancel)
-        # self.update_timer = UpdateTimer(0.25, self.update)
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update)
         # self.update_timer.internal_timer.stop()
 
     def update(self):
         # TODO: Update method to refresh available devices on the GUI
+
         pass
 
     def connect_device(self):
         pass
 
     def cancel(self):
+        print("Device Selection Cancelled!")
+        for channel in self.node.channels:
+            if channel is not None:
+                channel_close_thread = ANTWorker(self, channel.close)
+                channel_close_thread.done_signal.connect(
+                    lambda: self.node.clear_channel(channel.number))
+        self.close()
+        pass
+
+    def showEvent(self, event):
+        # Open all available channels on the node
+        event.accept()
+        pass
+
+    def open_search_mode(self, profile=None, device_ID=None):
+        # Open all available channels on the node
+        for i in range(self.node.max_channels):
+            if self.node.channels[i] is None:
+                self.open_thread = ANTWorker(self,
+                                             self.node.open_channel,
+                                             i,
+                                             profile=profile)
+
+        # TODO: go to node level connection method to make sure it can handle 7 requests at once
+        # 31 oct 2023 Goal - Dive into the node spot
+        # TODO: Need an intermediate connection step to indicate a successful handshake
+        # self.open_thread.done_signal.connect(self.set_connection_status)
+        # self.open_thread.done_signal.connect(
+        #     functools.partial(self.set_config, channel))
+
+        # self.open_thread.done_signal.connect(self.wait_for_device_connection)
+                self.open_thread.start()
+        self.show()
+
+    def wait_for_device_connection(self):
+        wait_thread = ANTWorker()
+
+    def wait_for_device_ID(self, timeout):
+        pass
+
+    def closeEvent(self, event):
+        event.accept()
         pass

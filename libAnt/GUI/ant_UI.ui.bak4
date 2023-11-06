@@ -435,7 +435,7 @@
           </widget>
          </item>
          <item>
-          <widget class="QLineEdit" name="device_ID_field"/>
+          <widget class="QLineEdit" name="lineEdit"/>
          </item>
         </layout>
        </item>

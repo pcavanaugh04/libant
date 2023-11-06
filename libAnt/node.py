@@ -449,16 +449,10 @@ class Node:
         return (self.channels[channel_num].open())
 
     # TODO: Make this channel attribute?
-    def close_channel(self, channel_num, timeout=False):
-        try:
-            self.channels[channel_num].close(timeout=timeout)
-        except Exception as e:
-            raise e
-            return False
-        else:
-            del self.channels[channel_num]
-            self.channels[channel_num] = None
-            return True
+    def clear_channel(self, channel_num, timeout=False):
+        del self.channels[channel_num]
+        self.channels[channel_num] = None
+        return True
 
     # TODO: Make this channel attribute
     def send_tx_msg(self, msg):
@@ -636,6 +630,8 @@ class Channel(threading.Thread):
         self.msg_freq = channel_msg_freq
         self.search_timeout = channel_search_timeout
         self.first_message_flag = False
+        self.id = None
+        self.status = None
 
         self.cfig_manager.put(m.SetNetworkKeyMessage(self.network,
                                                      self.network_key))
@@ -660,21 +656,26 @@ class Channel(threading.Thread):
         return True
 
     def close(self, timeout=False):
+        # timeout message will close channel automatically, so only send close
+        # channel control message if channel is being closed by user
         if not timeout:
-            self.ctrl_manager.put(m.CloseChannelMessage(self.number))
-            self.ctrl_manager.join()
+            self._ctrl.put(m.CloseChannelMessage(self.number))
+            self._ctrl.join()
 
         else:
             sleep(0.5)
 
+        # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
+        # Stop thread execution
+        self.stop()
         # self = None
 
     def run(self):
         """Run method for channel thread. Process inputs and outputs to main
         device thread"""
-        while not self._stop_event.is_set():
+        try:
             # Channel creation starts with waiting for first successful message
             self._out.put("Blocking until First Message")
             self._out.join()
@@ -708,14 +709,20 @@ class Channel(threading.Thread):
             self.status = self.get_status(disp=True)
 
             # TODO: add continuous run loop after proper config
-            while True:
+            while not self._stop_event.isSet():
+                # While loop will need to be able to handle intermittent control
+                # messages and tx messages
+
                 sleep(0.1)
                 pass
+
+        except Exception:
+            pass
 
     def stop(self):
         self._stop_event.set()
 
-    def get_ID(self, disp=False):
+    def get_status(self, disp=False):
         """Request channel ID properties from node on established connection.
 
         """
@@ -729,7 +736,7 @@ class Channel(threading.Thread):
             self.onSuccess(stat_msg.disp_status(stat_msg))
         return stat_dict
 
-    def get_status(self, disp=False):
+    def get_ID(self, disp=False):
         """Request channel status from node and return properties.
 
         """
