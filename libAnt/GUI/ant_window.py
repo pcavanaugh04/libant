@@ -4,7 +4,7 @@ Created on Tue Mar 14 18:14:15 2023
 
 @author: patri
 """
-from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget
+from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QListWidgetItem
 from PyQt5 import uic
 from PyQt5.QtCore import QTimer
 import sys
@@ -344,7 +344,7 @@ class ANTSelector(QWidget):
 
     def select_device(self):
         # Specify the channel of the device the user wants to connect to
-        device_channel = self.available_devices_list.selectedItem()
+        device_channel = self.available_devices_list.currentItem().data
 
         # Close the other channels
         # TODO: This may cause issues if trying to close in search mode. Will
@@ -353,9 +353,11 @@ class ANTSelector(QWidget):
             if channel is not None and channel.number != device_channel.number:
                 close_thread = ANTWorker(self, channel.close)
                 close_thread.done_signal.connect(self.node.clear_channel)
+                close_thread.start()
 
         # Emit selected device channel to main program
-        self.selected_signal.emit(device_channel)
+        self.selected_signal.emit(device_channel.number)
+        self.close()
 
     def cancel(self):
         print("Device Selection Cancelled!")
@@ -363,7 +365,8 @@ class ANTSelector(QWidget):
             if channel is not None:
                 channel_close_thread = ANTWorker(self, channel.close)
                 channel_close_thread.done_signal.connect(
-                    lambda: self.node.clear_channel(channel.number))
+                    self.node.clear_channel)
+                channel_close_thread.start()
         self.close()
         pass
 
@@ -456,8 +459,7 @@ class ANTSelector(QWidget):
             #     f"{channel.id['device_number']}",
             #     userData=channel)
             # TODO: Look for a way to tie labels and object to one field
-            self.available_devices_list.addItem(
-                f"{channel.id['device_number']}")
+            self.available_devices_list.addItem(ANTListItem(channel))
 
         else:
             pass
@@ -466,3 +468,14 @@ class ANTSelector(QWidget):
     def closeEvent(self, event):
         event.accept()
         pass
+
+
+class ANTListItem(QListWidgetItem):
+    def __init__(self, channel_object):
+        self.channel = channel_object
+        self.profile_dict = {0: "PWR", 17: "FE-C", 120: "HR"}
+        device_number = self.channel.id["device_number"]
+        profile = self.profile_dict[self.channel.id["device_type"]]
+        self.label = f"{profile} {device_number}"
+        super(ANTListItem, self).__init__(self.label)
+        self.data = channel_object

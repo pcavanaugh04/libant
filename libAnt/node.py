@@ -638,6 +638,7 @@ class Channel(threading.Thread):
         self.id = None
         self.status = None
         self.device_number = device_number
+        self.searching = False
 
         self.cfig_manager.put(m.SetNetworkKeyMessage(self.network,
                                                      self.network_key))
@@ -656,6 +657,7 @@ class Channel(threading.Thread):
 
     def open(self):
         self.ctrl_manager.put(m.OpenChannelMessage(self.number))
+        self.searching = True
         self.ctrl_manager.join()
         # Start Channel thread for processing I/O messages
         self.start()
@@ -663,9 +665,12 @@ class Channel(threading.Thread):
         return self.number
 
     def close(self, timeout=False):
+        # Clear the channel queues to open up
+        self.searching = False
         # timeout message will close channel automatically, so only send close
         # channel control message if channel is being closed by user
         if not timeout:
+            print("Do we get to putting channel close Message in ctrl queue")
             self._ctrl.put(m.CloseChannelMessage(self.number))
             self._ctrl.join()
 
@@ -686,6 +691,7 @@ class Channel(threading.Thread):
         try:
             # Channel creation starts with waiting for first successful message
             self._out.put("Blocking until First Message")
+            self.searching = True
             self._out.join()
 
             # Thread will reactivate once an item has been recognized and removed
@@ -706,12 +712,15 @@ class Channel(threading.Thread):
                     # self._out.join()
                     print("Made it to the close statement")
                     self.close(timeout=True)
-                    print("Just before run return statement")
+                    self.searching = False
                     return
-                    # TODO: Emit signal to indicate channel has timed out
+
+                elif not self.searching:
+                    return
 
             self.onSuccess("First Message Recieved!\n"
                            f"Idenfiying Channel {self.number} Properties...")
+            self.searching = False
             # Identify channel parameters
             self.id = self.get_ID(disp=True)
             self.status = self.get_status(disp=True)
@@ -889,7 +898,10 @@ class QueueManager(Queue):
     def remove_task(self, channel, waiter=None):
         """Remove task from proper queue and corresponding waiter object"""
         if channel is not None:
-            self.channels[channel].queues[self.name].task_done()
+            try:
+                self.channels[channel].queues[self.name].task_done()
+            except ValueError:
+                pass
 
         else:
             self.task_done()
