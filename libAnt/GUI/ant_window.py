@@ -4,28 +4,32 @@ Created on Tue Mar 14 18:14:15 2023
 
 @author: patri
 """
-from PyQt5.QtWidgets import QMainWindow
+from PyQt5.QtWidgets import QMainWindow, QApplication
 from PyQt5 import uic
+from PyQt5.QtCore import QTimer
+import sys
 import os
 from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import DriverException
+import logging
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
 
 
-class MainWindow(QMainWindow):
+class ANTWindow(QMainWindow):
 
     def __init__(self):
-        # %% Load UI elements
+        # Load UI elements
         self.program_start_time = datetime.now()
 
         # Initialize superclass
         QMainWindow.__init__(self)
         # Load the graphical layout
-        path = os.path.join(os.getcwd(), "..", "libAnt", "ant_UI.ui")
+        path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
         self.UI_elements = uic.loadUi(path, self)
+        self.node = None
 
         # Define Signal/Slot Relationship for emitting success and failure
         class HandlerObject(QObject):
@@ -61,7 +65,7 @@ class MainWindow(QMainWindow):
         # Define avaliable Device Profiles
         self.dev_profiles = ['FE-C', 'PWR', 'HR']
         # Button Connections
-        self.open_channel_button.clicked.connect(self.open_channel)
+        self.open_search_button.clicked.connect(self.open_search_selection)
         self.close_channel_button.clicked.connect(self.close_channel)
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(self.send_grade_msg)
@@ -83,29 +87,45 @@ class MainWindow(QMainWindow):
             print("Operation Failed!")
 
     def closeEvent(self, event):
-        end_thread = ANTWorker(self, self.node.stop)
-        end_thread.start()
+        # Close and terminate ANT Node
+        if self.node is not None:
+            end_thread = ANTWorker(self, self.node.stop)
+            end_thread.start()
+            end_thread.finished.connect(
+                lambda: QTimer.singleShot(0, self.close_application))
+        else:
+            QTimer.singleShot(100, self.close_application)
+
+        # Remove Package Additions to Path
+        sys.path.pop(0)
         event.accept()
+
+    def close_application(self):
+        """Remove handlers from root logger on close."""
+        QApplication.quit()
+        logging.getLogger().root.handlers.clear()
 
     def showEvent(self, event):
-        start_thread = ANTWorker(self,
-                                 self.node.start,
-                                 self.obj.callback,
-                                 self.obj.error_callback)
-        start_thread.done_signal.connect(self.device_startup)
-        start_thread.start()
+        if self.node is not None:
+            start_thread = ANTWorker(self,
+                                     self.node.start,
+                                     self.obj.callback,
+                                     self.obj.error_callback)
+            start_thread.done_signal.connect(self.device_startup)
+            start_thread.start()
         event.accept()
 
-    def open_channel(self):
-        self.channel_add_num = int(self.channel_number_combo.currentText())
-        channel_profile = str(self.channel_profile_combo.currentText())
-        # self.thread_parent = QObject()
-        open_thread = ANTWorker(self,
-                                self.node.open_channel,
-                                self.channel_add_num,
-                                profile=channel_profile)
-        open_thread.done_signal.connect(self.channel_startup)
-        open_thread.start()
+    def open_search_selection(self):
+        pass
+        #     self.channel_add_num = int(self.channel_number_combo.currentText())
+        #     channel_profile = str(self.channel_profile_combo.currentText())
+        #     # self.thread_parent = QObject()
+        #     open_thread = ANTWorker(self,
+        #                             self.node.open_channel,
+        #                             self.channel_add_num,
+        #                             profile=channel_profile)
+        #     open_thread.done_signal.connect(self.channel_startup)
+        #     open_thread.start()
 
     def device_startup(self, success):
         if success:
@@ -114,8 +134,8 @@ class MainWindow(QMainWindow):
             self.serial_number_box.setText(str(self.node.serial_number))
             self.max_channels_box.setText(str(self.node.max_channels))
             self.max_networks_box.setText(str(self.node.max_networks))
-            ch_list = [str(i) for i in range(self.node.max_channels)]
-            self.channel_number_combo.addItems(ch_list)
+            # ch_list = [str(i) for i in range(self.node.max_channels)]
+            # self.channel_number_combo.addItems(ch_list)
             self.channel_profile_combo.addItems(self.dev_profiles)
         else:
             self.message_viewer.append("Error in Device Startup! "

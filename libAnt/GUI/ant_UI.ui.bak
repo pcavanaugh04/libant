@@ -192,15 +192,7 @@
     </item>
    </layout>
   </widget>
-  <widget class="QWidget" name="layoutWidget">
-   <property name="geometry">
-    <rect>
-     <x>0</x>
-     <y>0</y>
-     <width>402</width>
-     <height>811</height>
-    </rect>
-   </property>
+  <widget class="QWidget" name="">
    <layout class="QVBoxLayout" name="verticalLayout_5">
     <item>
      <widget class="QFrame" name="device_info_frame">
@@ -381,12 +373,36 @@
           </font>
          </property>
          <property name="text">
-          <string>Open Search Selector</string>
+          <string>Open Channel</string>
          </property>
         </widget>
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <widget class="QLabel" name="label_12">
+           <property name="font">
+            <font>
+             <pointsize>9</pointsize>
+             <weight>50</weight>
+             <bold>false</bold>
+            </font>
+           </property>
+           <property name="text">
+            <string>Channel Number:</string>
+           </property>
+          </widget>
+         </item>
+         <item alignment="Qt::AlignLeft">
+          <widget class="QComboBox" name="channel_number_combo">
+           <property name="maximumSize">
+            <size>
+             <width>45</width>
+             <height>16777215</height>
+            </size>
+           </property>
+          </widget>
+         </item>
          <item>
           <widget class="QLabel" name="label_13">
            <property name="font">
@@ -400,7 +416,7 @@
             <string>ANT+ Profile:</string>
            </property>
            <property name="alignment">
-            <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+            <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
            </property>
           </widget>
          </item>
@@ -420,27 +436,10 @@
            </property>
           </widget>
          </item>
-         <item>
-          <widget class="QLabel" name="label_12">
-           <property name="font">
-            <font>
-             <pointsize>9</pointsize>
-             <weight>50</weight>
-             <bold>false</bold>
-            </font>
-           </property>
-           <property name="text">
-            <string>Device ID:</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="lineEdit"/>
-         </item>
         </layout>
        </item>
        <item>
-        <widget class="QPushButton" name="open_search_button">
+        <widget class="QPushButton" name="open_channel_button">
          <property name="minimumSize">
           <size>
            <width>0</width>
@@ -455,7 +454,7 @@
           </font>
          </property>
          <property name="text">
-          <string>Open Search Selector</string>
+          <string>Open Channel</string>
          </property>
         </widget>
        </item>

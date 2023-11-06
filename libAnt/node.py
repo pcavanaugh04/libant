@@ -350,21 +350,6 @@ class Node:
         if onFailure:
             self.onFailure = onFailure
 
-        try:
-            # Try Opening Node with PID corresponding to ANT USB-m device
-            self.node = Node(USBDriver(vid=0x0FCF, pid=0x1009),
-                             debug=False)
-
-        except DriverException:
-            try:
-                # If failed, try with PID corresponding to ANT USB-2 device
-                self.node = Node(USBDriver(vid=0x0FCF, pid=0x1008),
-                                 debug=True)
-            except DriverException as e:
-                # If this fails, the device is probably not plugged in
-                print(e)
-                return
-
         self._pump = Pump(self._driver,
                           self.config_manager,
                           self.control_manager,
