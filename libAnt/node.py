@@ -108,8 +108,8 @@ class Pump(threading.Thread):
                     try:
                         #  Write
                         # Send messages from device level queues
-                        self._config.send_message(unload=True)
                         self._control.send_message()
+                        self._config.send_message(unload=True)
                         # self._tx.send_message()
 
                         # Send messages from any awaiting channel queues
@@ -159,9 +159,9 @@ class Pump(threading.Thread):
 
                     except ex.TxFail as e:
                         self._onFailure(e)
-                        self._tx.task_done()
-                        self._out.put(False)
-                        self._out.join()
+                        self.tx_manager.remove_task(e.channel)
+                        self.output_manager.put_msg(False, e.channel)
+                        self.output_manager.join()
 
                     except ex.RxFailGoToSearch as e:
                         self._onFailure(e)
@@ -170,11 +170,11 @@ class Pump(threading.Thread):
                         self._onFailure(e)
                         com_channel = self._out.channels[e.channel]
                         if not com_channel.first_message_flag:
-                            print("-----------IN Exception Handling-------------")
-                            print(
-                                f"Channel Out queue contents: {list(com_channel._out.queue)}")
-                            print(
-                                f"tasks left in channel out queue {com_channel._out.qsize()}")
+                            # print("-----------IN Exception Handling-------------")
+                            # print(
+                            #     f"Channel Out queue contents: {list(com_channel._out.queue)}")
+                            # print(
+                            #     f"tasks left in channel out queue {com_channel._out.qsize()}")
                             com_channel._out.get()
                             self._out.remove_task(e.channel)
                             sleep(0.1)
@@ -203,7 +203,7 @@ class Pump(threading.Thread):
                         raise e
                     finally:
                         self._control.remove_task(w.channel, w)
-                        self._out.output_msg(msg, w.channel)
+                        self._out.put_msg(msg, w.channel)
 
             # Channel Event Messages in response to control messages
             elif msg.type == c.MESSAGE_CHANNEL_EVENT:
@@ -231,6 +231,10 @@ class Pump(threading.Thread):
                     try:
                         out = w.callback(msg, w.message.type)
                     except Exception as e:
+                        print(f"----MESSAGE THAT CAUSED ERROR: {msg}----")
+                        print(f"Message type: {type(msg)}")
+                        print(f"Message waiter callback: {w.callback}")
+                        print(f"Message waiter type: {w.message.type}")
                         raise e
                     else:
                         return out
@@ -260,19 +264,18 @@ class Pump(threading.Thread):
                     else:
                         self._out.task_done()
                     finally:
-                        # This works for 1 channel handling at a time...
-                        print("IN FINALLY STATEMENT")
-                        print(
-                            f"Channel Out queue contents: {list(com_channel._out.queue)}")
-                        print(
-                            f"tasks left in channel out queue {com_channel._out.qsize()}")
+                        # print("IN FINALLY STATEMENT")
+                        # print(
+                        #     f"Channel Out queue contents: {list(com_channel._out.queue)}")
+                        # print(
+                        #     f"tasks left in channel out queue {com_channel._out.qsize()}")
                         # com_channel._out.get()
                         self._out.remove_task(msg.channel)
-                        com_channel.first_message_flag = False
+                        # com_channel.first_message_flag = False
 
                 if msg.content[2] == c.EVENT_TRANSFER_TX_COMPLETED:
-                    self._tx.task_done()
-                    self._out.put(True)
+                    self._tx.remove_task(msg.channel)
+                    self._out.put_msg(True, msg.channel)
 
         elif msg.type == c.MESSAGE_CHANNEL_BROADCAST_DATA:
             # Build broadcast message into standard format
@@ -374,6 +377,8 @@ class Node:
                           self.debug)
         self._pump.start()
         self.reset()
+        # Assign ANT+ Network
+        self.assign_network()
         self.capabilities = self.get_capabilities(disp=False)
         self.serial_number = self.get_ANT_serial_number(disp=False)
         self.max_channels = self.capabilities["max_channels"]
@@ -388,9 +393,14 @@ class Node:
 
         return True
 
+    def assign_network(self, network_num: int = 0,
+                       network_key=c.ANTPLUS_NETWORK_KEY):
+        """Assign network key to device. Default is ANT+ network"""
+        self.config_manager.put(
+            m.SetNetworkKeyMessage(network_num, network_key))
+        self.config_manager.join()
+
     def open_channel(self, channel_num: int = 0,
-                     network_num: int = 0,
-                     network_key=c.ANTPLUS_NETWORK_KEY,
                      channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
                      device_type=None,
                      channel_frequency=2457,
@@ -402,9 +412,9 @@ class Node:
             print("Error: Channel assignment exceeds device capabilities")
             return
 
-        if network_num > self.max_networks or network_num < 0:
-            print("Error: Network assignment exceeds device capabilities")
-            return
+        # if network_num > self.max_networks or network_num < 0:
+        #     print("Error: Network assignment exceeds device capabilities")
+        #     return
 
         if self.channels[channel_num] is not None:
             print("Error: Channel is already in use")
@@ -434,8 +444,6 @@ class Node:
                                                  self.onSuccess,
                                                  self.onFailure,
                                                  channel_num,
-                                                 network_num,
-                                                 network_key,
                                                  channel_type,
                                                  device_type,
                                                  device_number,
@@ -452,7 +460,6 @@ class Node:
 
         return (self.channels[channel_num].open())
 
-    # TODO: Make this channel attribute?
     def clear_channel(self, channel_num, timeout=False):
         # del self.channels[channel_num]
         self.channels[channel_num] = None
@@ -460,11 +467,8 @@ class Node:
 
     # TODO: Make this channel attribute
     def send_tx_msg(self, msg):
-        self.tx_messages.put(msg)
-        self.tx_messages.join()
-        msg_success = self.outputs.get()
-        self.outputs.task_done()
-        return msg_success
+        channel = msg.channel
+        return(self.channels[channel].send_tx_msg(msg))
 
     # Depreciated
     def enableRxScanMode(self, networkKey=c.ANTPLUS_NETWORK_KEY,
@@ -495,6 +499,7 @@ class Node:
 
     def reset(self):
         self.control_manager.put(m.ResetSystemMessage())
+        self.control_manager.join()
         if self.channels == []:
             return
         else:
@@ -584,10 +589,13 @@ class Node:
         """
         pass
 
-    def add_msg(self, msg):
+    def add_msg(self, msg, channel_num=None):
         dt = datetime.now()
         dt_str = dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        self.messages.append(f"{dt_str},{msg}")
+        if channel_num is not None:
+            self.channels[channel_num].messages.append(f"{dt_str}, {msg}")
+        else:
+            self.messages.append(f"{dt_str}, {msg}")
 
 
 class Channel(threading.Thread):
@@ -600,8 +608,6 @@ class Channel(threading.Thread):
                  on_success,
                  on_failure,
                  channel_num=0,
-                 network_num=0,
-                 network_key=c.ANTPLUS_NETWORK_KEY,
                  channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
                  device_type=0,
                  device_number=0,
@@ -627,21 +633,20 @@ class Channel(threading.Thread):
         self._out = ANTQueue(self.number)
         self._tx = ANTQueue(self.number)
         self.queues = {"ctrl": self._ctrl, "out": self._out, "tx": self._tx}
-        self.network = network_num
-        self.network_key = network_key
+        # self.network = network_num
+        # self.network_key = network_key
         self._type = channel_type
         self.device_type = device_type
         self.frequency = channel_frequency
         self.msg_freq = channel_msg_freq
         self.search_timeout = channel_search_timeout
         self.first_message_flag = False
+        self.messages = []
         self.id = None
         self.status = None
         self.device_number = device_number
         self.searching = False
 
-        self.cfig_manager.put(m.SetNetworkKeyMessage(self.network,
-                                                     self.network_key))
         self.cfig_manager.put(m.AssignChannelMessage(self.number,
                                                      self._type))
         self.cfig_manager.put(m.SetChannelIdMessage(self.number,
@@ -673,6 +678,7 @@ class Channel(threading.Thread):
             print("Do we get to putting channel close Message in ctrl queue")
             self._ctrl.put(m.CloseChannelMessage(self.number))
             self._ctrl.join()
+            sleep(0.5)
 
         else:
             sleep(0.5)
@@ -680,6 +686,7 @@ class Channel(threading.Thread):
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
+        sleep(0.5)
         # Stop thread execution
         self.stop()
         return self.number
@@ -729,6 +736,15 @@ class Channel(threading.Thread):
             while not self._stop_event.isSet():
                 # While loop will need to be able to handle intermittent control
                 # messages and tx messages
+                try:
+                    tx_msg = self._tx.get(block=False)
+                except Empty:
+                    sleep(0.1)
+                else:
+                    # self._tx.task_done()
+                    self.tx_manager.put_msg(tx_msg, self.number)
+                    self.tx_manager.join()
+                # send any tx messages in queue
 
                 sleep(0.1)
                 pass
@@ -767,6 +783,12 @@ class Channel(threading.Thread):
         if disp:
             self.onSuccess(id_msg.disp_ID(id_msg))
         return id_dict
+
+    def send_tx_msg(self, msg):
+        self._tx.put(msg)
+        print("In Channel send tx msg method")
+        status = self._out.get(block=True)
+        return status
 
 
 class EventHook(object):
@@ -895,12 +917,16 @@ class QueueManager(Queue):
                 self.put(msg)
                 self.send_message(channel_num=channel.number)
 
-    def remove_task(self, channel, waiter=None):
+    def remove_task(self, channel_num=None, waiter=None):
         """Remove task from proper queue and corresponding waiter object"""
-        if channel is not None:
+        if channel_num is not None:
             try:
-                self.channels[channel].queues[self.name].task_done()
+                self.channels[channel_num].queues[self.name].task_done()
             except ValueError:
+                pass
+
+            except AttributeError:
+                # Potential case where channel object is removed before taskdone
                 pass
 
         else:
@@ -909,7 +935,7 @@ class QueueManager(Queue):
         if waiter is not None:
             self.waiters.remove(waiter)
 
-    def output_msg(self, message, channel):
+    def put_msg(self, message, channel):
         if channel is not None:
             self.channels[channel].queues[self.name].put(message)
 

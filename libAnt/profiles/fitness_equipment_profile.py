@@ -17,6 +17,7 @@ class SetTrackResistancePage(m.AcknowledgedMessage):
     def __init__(self, channel_num: int, grade: int, C_RR=0xFF):
         pg_num = c.PAGE_TRACK_RESISTANCE
         byte1 = byte2 = byte3 = byte4 = 0xFF
+        self.channel = channel_num
         content = bytearray([pg_num, byte1,
                              byte2, byte3, byte4])
         content.extend(int(grade).to_bytes(2, byteorder='little'))
@@ -36,6 +37,7 @@ class UserConfigurationPage(m.AcknowledgedMessage):
                  bike_weight=0xFFF,
                  bike_wheel_diameter=0xFF,
                  gear_ratio=0x00):
+        self.channel = channel_num
         pg_num = c.PAGE_USER_CONFIGURATION
         weight_bytes = (int(user_weight).to_bytes(2, byteorder='little'))
         byte3 = 0xFF

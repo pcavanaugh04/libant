@@ -98,7 +98,7 @@ class Message:
         if msg.content[2] == 0:
             return(f'Message Success. Type: {hex(msg_type)}')
         else:
-            event_msg = ChannelResponseMessage(msg.content)
+            event_msg = ChannelResponseMessage(msg)
             return(event_msg.process_event())
 
     @property
@@ -849,7 +849,7 @@ class ChannelResponseMessage(Message):
 
     def process_event(self):
         """
-
+        Decode event message from device and initiate proper resonse
 
         Returns
         -------
@@ -863,6 +863,9 @@ class ChannelResponseMessage(Message):
 
             case c.EVENT_TRANSFER_TX_FAILED:
                 raise e.TxFail(self.channel)
+
+            case c.EVENT_CHANNEL_COLLISION:
+                raise e.RxFail(self.channel)
 
             case c.INVALID_MESSAGE:
                 raise e.InvalidMessage()

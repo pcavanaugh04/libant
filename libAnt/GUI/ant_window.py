@@ -10,6 +10,7 @@ from PyQt5.QtCore import QTimer
 import sys
 import os
 import time
+import math
 from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
@@ -20,9 +21,185 @@ import functools
 import libAnt.profiles.fitness_equipment_profile as p
 
 
+class ANTDevice(QObject):
+    """Interface with ANTUSB stick to communicate with other ANT devies.
+
+    An "ANT Device" will primarily refer to an FE-C enabled trainer. However
+    It will eventually encapsulate all data streams coming from the device
+    in question
+    """
+
+    connection_signal = pyqtSignal(bool)
+    success_signal = pyqtSignal('PyQt_PyObject')
+    failure_signal = pyqtSignal('PyQt_PyObject')
+    tx_success = pyqtSignal('PyQt_PyObject')
+
+    def __init__(self, debug=False):
+        super().__init__()
+        self.node = None
+        self.connected = False
+
+        # Attributes used for writing sensor data to file
+        self.log_file = None
+        self.file_open_flag = False
+        self.log_data_flag = False
+        self.log_path = ""
+        self.log_name = ""
+        self.name = "trainer"
+        self.trainer_msgs = [None]
+        self.data = ANTData()
+        self.datas = []
+        self.debug = debug
+        self.prev_msg_len = 0
+        self.event_count = 0
+        self.grade = 0
+        # self.wheel_diameter = None
+        self.wheel_diameter = 0.7
+        self.FE_C_channel = None
+
+        def success_handler(msg):
+            if hasattr(msg, 'build'):
+                # If the message has a build method we know it's a broadcast
+                # message
+
+                # Extract power information from trainer specific data page
+                if int(msg.content[0]) == 0x19:
+                    trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
+                    self.trainer_msgs.append(trainer_msg)
+                    self.data.inst_power = trainer_msg.inst_power
+                    self.data.avg_power = trainer_msg.avg_power
+                    self.event_count = trainer_msg.event
+                    try:
+                        self.data.torque = (
+                            self.data.avg_power
+                            / (self.data.rpm / 60 * 2 * math.pi))
+                    except ZeroDivisionError:
+                        self.data.torque = 0
+
+                    timestamp = trainer_msg.timestamp
+
+                # Extract speed info from general FE data page
+                elif int(msg.content[0]) == 0x10:
+                    FE_msg = p.GeneralFEDataPage(msg)
+                    speed_kph = FE_msg.speed * 3600 / 10**6
+                    self.data.speed = speed_kph
+                    rpm = speed_kph * 1000 / 60 / \
+                        (math.pi * self.wheel_diameter)
+                    self.data.rpm = rpm
+                    try:
+                        self.data.torque = (self.data.avg_power
+                                            / (rpm / 60 * 2 * math.pi))
+                    except ZeroDivisionError:
+                        self.data.torque = 0
+                    timestamp = FE_msg.timestamp
+
+                else:
+                    timestamp = datetime.now()
+
+                self.data.timestamp = timestamp
+                self.datas.append(self.data)
+
+                # Creates a new ANTData object, pre-populated with prev data
+                self.data = ANTData(self.data)
+
+                if self.log_data_flag:
+                    self._save_data(self.data)
+
+            self.add_message(msg)
+
+        def fail_handler(msg):
+            self.add_message(msg)
+            # if isinstance(msg, RxSearchTimeout):
+            #     if self.connected:
+            #         # self.close_channel(connection_timeout=True)
+            #         logger.warning("ANT+ Trainer Connection Timeout. "
+            #                        "Disconnecting Device")
+            #     else:
+            #         # self.close_channel(search_timeout=True)
+            #         logger.console("ANT+ Trainer Search Timeout. "
+            #                        "No Device Avaliable")
+            #     pass
+
+            # if isinstance(msg, DriverException):
+            #     self.clear_device()
+
+        self.success_signal.connect(success_handler)
+        self.failure_signal.connect(fail_handler)
+
+        # Define avaliable Device Profiles
+        self.dev_profiles = ['FE-C', 'PWR', 'HR']
+        self.init_node(debug=debug)
+
+    def add_message(self, msg):
+        """Add message to node message array or respective channel"""
+
+        if hasattr(msg, "channel"):
+            channel = msg.channel
+        else:
+            channel = None
+        msg = str(msg)
+        self.node.add_msg(msg, channel)
+
+    def init_node(self, debug=False):
+        # May need to try this a few times
+        fail_count = 0
+        while fail_count < 3:
+            try:
+                self.node = Node(debug=debug)
+            except DriverException as e:
+                if fail_count == 2:
+                    print(e)
+
+                fail_count += 1
+            else:
+                return
+
+    @pyqtSlot()
+    def callback(self, msg):
+        self.success_signal.emit(msg)
+
+    @pyqtSlot()
+    def error_callback(self, emsg):
+        self.failure_signal.emit(emsg)
+
+    def set_track_resistance(self, channel, **kwargs):
+        self.grade = kwargs.get("grade")
+        grade = p.set_grade(channel, **kwargs)
+        self.send_tx_msg(grade)
+        self.node.add_msg(f"Track Resistance Command Sent: {kwargs}", channel)
+
+    def set_config(self, channel, success=True, **kwargs):
+        if success:
+            cfg = p.set_user_config(channel, **kwargs)
+            self.send_tx_msg(cfg)
+            self.node.add_msg(f"User Config Command Sent: {kwargs}", channel)
+        else:
+            pass
+
+    def send_tx_msg(self, msg):
+        """Send tx message to ANT Device"""
+
+        tx_thread = ANTWorker(self,
+                              self.node.send_tx_msg,
+                              msg)
+        tx_thread.done_signal.connect(functools.partial(self.tx_msg_status,
+                                                        msg))
+        tx_thread.start()
+
+    def tx_msg_status(self, msg, success):
+        """Callback to determine success state of tx message. Repeat message
+        if failed"""
+
+        self.tx_success.emit(success)
+        if success:
+            pass
+        else:
+            self.send_tx_msg(msg)
+
+
 class ANTWindow(QMainWindow):
 
-    def __init__(self):
+    def __init__(self, ANT_device):
         # Load UI elements
         self.program_start_time = datetime.now()
 
@@ -31,75 +208,129 @@ class ANTWindow(QMainWindow):
         # Load the graphical layout
         path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
         self.UI_elements = uic.loadUi(path, self)
-        self.node = None
+        self.ANT = ANT_device
         self.search_window = None
+        self.prev_msg_len = 0
+
+        self.update_timer = QTimer()
+        self.update_timer.setInterval(250)
+        self.update_timer.timeout.connect(self.periodic_ANT_update)
+
+        # def success_handler(msg):
+        #     """this function is sent to the node as instructurion how to
+        #     handle a successful event"""
+
+        #     if hasattr(msg, 'build'):
+        #         # If the message has a build method we know it's a broadcast
+        #         # message
+
+        #         # Extract power information from trainer specific data page
+        #         if int(msg.content[0]) == 0x19:
+        #             trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
+        #             self.trainer_msgs.append(trainer_msg)
+        #             self.data.inst_power = trainer_msg.inst_power
+        #             self.data.avg_power = trainer_msg.avg_power
+        #             self.event_count = trainer_msg.event
+        #             try:
+        #                 self.data.torque = (
+        #                     self.data.avg_power
+        #                     / (self.data.rpm / 60 * 2 * math.pi))
+        #             except ZeroDivisionError:
+        #                 self.data.torque = 0
+
+        #             timestamp = trainer_msg.timestamp
+
+        #         # Extract speed info from general FE data page
+        #         elif int(msg.content[0]) == 0x10:
+        #             FE_msg = p.GeneralFEDataPage(msg)
+        #             speed_kph = FE_msg.speed * 3600 / 10**6
+        #             self.data.speed = speed_kph
+        #             rpm = speed_kph * 1000 / 60 / \
+        #                 (math.pi * ANT().wheel_diameter)
+        #             self.data.rpm = rpm
+        #             try:
+        #                 self.data.torque = (self.data.avg_power
+        #                                     / (rpm / 60 * 2 * math.pi))
+        #             except ZeroDivisionError:
+        #                 self.data.torque = 0
+        #             timestamp = FE_msg.timestamp
+
+        #         else:
+        #             timestamp = datetime.now()
+
+        #         self.data.timestamp = timestamp
+        #         self.datas.append(self.data)
+
+        #         # Creates a new ANTData object, pre-populated with prev data
+        #         self.data = ANTData(self.data)
+
+        #         if self.log_data_flag:
+        #             self._save_data(self.data)
+
+        #     msg = str(msg)
+        #     self.node.add_msg(msg)
+
         # Define Signal/Slot Relationship for emitting success and failure
 
-        class HandlerObject(QObject):
-            success_signal = pyqtSignal('PyQt_PyObject')
-            failure_signal = pyqtSignal('PyQt_PyObject')
+        # class HandlerObject(QObject):
+        #     success_signal = pyqtSignal('PyQt_PyObject')
+        #     failure_signal = pyqtSignal('PyQt_PyObject')
 
-            def __init__(self):
-                super().__init__()
+        #     def __init__(self):
+        #         super().__init__()
 
-            def callback(self, msg):
-                self.success_signal.emit(msg)
+        #     def callback(self, msg):
+        #         self.success_signal.emit(msg)
 
-            def error_callback(self, emsg):
-                self.failure_signal.emit(emsg)
+        #     def error_callback(self, emsg):
+        #         self.failure_signal.emit(emsg)
 
-        self.obj = HandlerObject()
-        self.trainer_msgs = [None]
+        # self.obj = HandlerObject()
+        # self.prev_trainer_msg = None
 
-        def signal_handler(msg):
-            if hasattr(msg, 'build') and int(msg.content[0]) == 0x19:
-                trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
-                self.trainer_msgs.append(trainer_msg)
-                self.power_box.setText(str(trainer_msg.inst_power))
-                self.event_box.setText(str(trainer_msg.event))
-                self.avg_power_box.setText(str(trainer_msg.avg_power))
+        # def signal_handler(msg):
+        #     if hasattr(msg, 'build') and int(msg.content[0]) == 0x19:
+        #         trainer_msg = p.TrainerDataPage(msg, self.prev_trainer_msg)
+        #         self.trainer_msgs.append(trainer_msg)
+        #         self.power_box.setText(str(trainer_msg.inst_power))
+        #         self.event_box.setText(str(trainer_msg.event))
+        #         self.avg_power_box.setText(str(trainer_msg.avg_power))
+        #         self.prev_trainer_msg = trainer_msg
 
-            msg = str(msg)
+        #     if hasattr(msg, 'channel'):
+        #         channel = msg.channel
 
-            # if "ready to clear channel" in msg:
-            #     self.node.clear_channel(int(msg[-1]), timeout=True)
+        #     else:
+        #         channel = None
 
-            self.node.messages.append(msg)
-            self.message_viewer.append(msg)
+        #     msg = str(msg)
+        #     self.node.add_msg(msg, channel_num=channel)
+        #     # self.message_viewer.append(msg)
 
-        self.obj.success_signal.connect(signal_handler)
-        self.obj.failure_signal.connect(signal_handler)
+#         self.obj.success_signal.connect(signal_handler)
+#         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
-        # self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
-        self.dev_profiles = ['HR', 'FE-C', 'PWR', '']
+        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
+        # self.dev_profiles = ['HR', 'FE-C', 'PWR', '']
 
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
         self.close_channel_button.clicked.connect(self.close_channel)
         self.user_config_button.clicked.connect(self.send_usr_cfg)
-        self.track_resistance_button.clicked.connect(self.send_grade_msg)
+        self.track_resistance_button.clicked.connect(
+            self.send_track_resistance)
 
-        # Signal Connections
-        self.init_node(debug=True)
+    # def check_success(self, success):
+    #     if success:
+    #         print("Operation Success!")
 
-    def init_node(self, debug=False):
-        try:
-            self.node = Node(debug=debug)
-        except DriverException as e:
-            print(e)
-            return
-
-    def check_success(self, success):
-        if success:
-            print("Operation Success!")
-
-        else:
-            print("Operation Failed!")
+    #     else:
+    #         print("Operation Failed!")
 
     def closeEvent(self, event):
         # Close and terminate ANT Node
-        if self.node is not None:
-            end_thread = ANTWorker(self, self.node.stop)
+        if self.ANT.node is not None:
+            end_thread = ANTWorker(self, self.ANT.node.stop)
             end_thread.start()
             end_thread.finished.connect(
                 lambda: QTimer.singleShot(0, self.close_application))
@@ -109,6 +340,8 @@ class ANTWindow(QMainWindow):
         # Close search selector if visible
         if self.search_window is not None and self.search_window.isVisible():
             self.search_window.close()
+
+        self.update_timer.stop()
 
         # Remove Package Additions to Path
         sys.path.pop(0)
@@ -120,15 +353,16 @@ class ANTWindow(QMainWindow):
         logging.getLogger().root.handlers.clear()
 
     def showEvent(self, event):
-        if self.node is not None and not self.node.isRunning():
+        if self.ANT.node is not None and not self.ANT.node.isRunning():
             start_thread = ANTWorker(self,
-                                     self.node.start,
-                                     self.obj.callback,
-                                     self.obj.error_callback)
+                                     self.ANT.node.start,
+                                     self.ANT.callback,
+                                     self.ANT.error_callback)
             start_thread.done_signal.connect(self.device_startup)
             start_thread.done_signal.connect(self.open_search_selection)
             start_thread.start()
 
+        self.update_timer.start()
         event.accept()
 
     def open_search_selection(self):
@@ -139,7 +373,7 @@ class ANTWindow(QMainWindow):
         """
 
         # Generate a new session of ANT selector window
-        self.search_window = ANTSelector(self.node)
+        self.search_window = ANTSelector(self.ANT)
         profile = self.channel_profile_combo.currentText()
         if profile == '':
             profile = None
@@ -177,13 +411,11 @@ class ANTWindow(QMainWindow):
 
     def device_startup(self, success):
         if success:
-            # print(self.node._pump._driver._dev._product)
-            self.name_box.setText(str(self.node._pump._driver._dev._product))
-            self.serial_number_box.setText(str(self.node.serial_number))
-            self.max_channels_box.setText(str(self.node.max_channels))
-            self.max_networks_box.setText(str(self.node.max_networks))
-            # ch_list = [str(i) for i in range(self.node.max_channels)]
-            # self.channel_number_combo.addItems(ch_list)
+            self.name_box.setText(
+                str(self.ANT.node._pump._driver._dev._product))
+            self.serial_number_box.setText(str(self.ANT.node.serial_number))
+            self.max_channels_box.setText(str(self.ANT.node.max_channels))
+            self.max_networks_box.setText(str(self.ANT.node.max_networks))
             self.channel_profile_combo.addItems(self.dev_profiles)
         else:
             self.message_viewer.append("Error in Device Startup! "
@@ -191,19 +423,22 @@ class ANTWindow(QMainWindow):
 
     def channel_startup(self, channel_num):
         self.status_ch_number_combo.addItem(str(channel_num))
-        ch = self.node.channels[channel_num]
+        ch = self.ANT.node.channels[channel_num]
         self.channel_type_box.setText(str(ch.status.get("channel_type")))
         self.network_number_box.setText(
             str(ch.status.get("network_number")))
         self.device_id_box.setText(str(ch.id.get("device_number")))
-        self.device_type_box.setText(str(ch.id.get("device_type")))
+        device_type = ch.id.get("device_type")
+        self.device_type_box.setText(str(device_type))
+        if device_type == 17:
+            self.ANT.FE_C_channel = channel_num
         self.channel_state_box.setText(str(ch.status.get("channel_state")))
 
     def close_channel(self):
         channel_num = int(self.status_ch_number_combo.currentText())
         self.combo_remove_index = self.status_ch_number_combo.currentIndex()
         close_thread = ANTWorker(self,
-                                 self.node.close_channel,
+                                 self.ANT.node.close_channel,
                                  channel_num)
         close_thread.done_signal.connect(self.channel_remove)
         close_thread.start()
@@ -245,7 +480,7 @@ class ANTWindow(QMainWindow):
         cfg = p.set_user_config(channel, **cfg_dict)
         self.send_tx_msg(cfg)
 
-    def send_grade_msg(self):
+    def send_track_resistance(self):
         grade_boxes = [self.grade_box, self.crr_box]
         grade_keys = ['grade', 'wheel_diameter_offset', 'bike_weight',
                       'bike_wheel_diameter', 'gear_ratio']
@@ -263,10 +498,8 @@ class ANTWindow(QMainWindow):
         except ValueError:
             self.message_viewer.append('Error: Channel must be selected to '
                                        'send user configuration message!')
-            return
 
-        grade = p.set_grade(channel, **grade_dict)
-        self.send_tx_msg(grade)
+        self.ANT.set_track_resistance(channel, **grade_dict)
 
     def send_tx_msg(self, msg):
         tx_thread = ANTWorker(self,
@@ -281,6 +514,20 @@ class ANTWindow(QMainWindow):
             pass
         else:
             self.send_tx_msg(msg)
+
+    def periodic_ANT_update(self):
+
+        if (self.ANT.node is not None
+                and len(self.ANT.node.messages) > self.prev_msg_len):
+            new_content = self.ANT.node.messages[self.prev_msg_len:]
+            for x in new_content:
+                self.message_viewer.append(x)
+            self.prev_msg_len = len(self.ANT.node.messages)
+
+        self.power_box.setText(f"{self.ANT.data.inst_power:.1f}")
+        self.speed_box.setText(f"{self.ANT.data.speed:.1f}")
+        self.avg_power_box.setText(f"{self.ANT.data.avg_power:.1f}")
+        self.event_box.setText(f"{self.ANT.event_count:.0f}")
 
     @pyqtSlot()
     def returnPressedSlot():
@@ -319,10 +566,10 @@ class ANTSelector(QWidget):
     """
     selected_signal = pyqtSignal(int)
 
-    def __init__(self, node):
+    def __init__(self, ANT):
 
         self.start_time = datetime.now()
-        self.node = node
+        self.ANT = ANT
 
         # Initialize superclass
         super(QWidget, self).__init__()
@@ -344,28 +591,34 @@ class ANTSelector(QWidget):
 
     def select_device(self):
         # Specify the channel of the device the user wants to connect to
-        device_channel = self.available_devices_list.currentItem().data
+        dev_channel = self.available_devices_list.currentItem().data
 
         # Close the other channels
         # TODO: This may cause issues if trying to close in search mode. Will
         # need to verify with queue sequence
-        for channel in self.node.channels:
-            if channel is not None and channel.number != device_channel.number:
+        for channel in self.ANT.node.channels:
+            if channel is not None and channel.number != dev_channel.number:
                 close_thread = ANTWorker(self, channel.close)
-                close_thread.done_signal.connect(self.node.clear_channel)
+                close_thread.done_signal.connect(self.ANT.node.clear_channel)
                 close_thread.start()
 
+        # TODO: On the last close thread, if device is FE-C open search mode to
+        # connect to other channels with same device number
+        # if dev_channel.device_type == 17:
+        #     close_thread.done_signal.connect(lambda: self.open_search_mode(
+        #         device_number=dev_channel.device_number))
+
         # Emit selected device channel to main program
-        self.selected_signal.emit(device_channel.number)
+        self.selected_signal.emit(dev_channel.number)
         self.close()
 
     def cancel(self):
         print("Device Selection Cancelled!")
-        for channel in self.node.channels:
+        for channel in self.ANT.node.channels:
             if channel is not None:
                 channel_close_thread = ANTWorker(self, channel.close)
                 channel_close_thread.done_signal.connect(
-                    self.node.clear_channel)
+                    self.ANT.node.clear_channel)
                 channel_close_thread.start()
         self.close()
         pass
@@ -395,11 +648,11 @@ class ANTSelector(QWidget):
         """
 
         # Open all available channels on the node
-        for i in range(self.node.max_channels):
+        for i in range(self.ANT.node.max_channels):
             # Only attempt a connection if not already initialized
-            if self.node.channels[i] is None:
+            if self.ANT.node.channels[i] is None:
                 open_thread = ANTWorker(self,
-                                        self.node.open_channel,
+                                        self.ANT.node.open_channel,
                                         i,
                                         profile=profile,
                                         device_number=device_number)
@@ -428,7 +681,7 @@ class ANTSelector(QWidget):
         """
         # Initailize the waiter thread
         wait_thread = ANTWorker(self, self.wait_for_device_ID,
-                                self.node.channels[channel_num])
+                                self.ANT.node.channels[channel_num])
         # Connect the event handler to the completion of the waiting period.
         # the search will either timeout or add a successful connection
         wait_thread.done_signal.connect(
@@ -446,7 +699,7 @@ class ANTSelector(QWidget):
             if channel.id is not None:
                 return channel
             time.sleep(0.1)
-        self.node.clear_channel(channel.number)
+        self.ANT.node.clear_channel(channel.number)
         # print("End of wait for device ID!")
 
     def handle_pairing_event(self, channel_num, channel):
@@ -479,3 +732,41 @@ class ANTListItem(QListWidgetItem):
         self.label = f"{profile} {device_number}"
         super(ANTListItem, self).__init__(self.label)
         self.data = channel_object
+
+
+class ANTData():
+    """Object to hold ANT data."""
+
+    _ATTRIBUTES = ["timestamp", "inst_power",
+                   "avg_power", "speed", "rpm", "torque"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, data=None):
+        """Init a new instance, with option to carryover previous data."""
+
+        self.timestamp = ""
+
+        if data is not None and isinstance(data, ANTData):
+            self.inst_power = data.inst_power
+            self.avg_power = data.avg_power
+            self.speed = data.speed
+            self.rpm = data.rpm
+            self.torque = data.torque
+        else:
+            self.inst_power = 0
+            self.avg_power = 0
+            self.speed = 0
+            self.rpm = 0
+            self.torque = 0
+
+    def get_formatted(self):
+        """Return comma separated list of values."""
+
+        attributes = []
+
+        for attr in self._ATTRIBUTES:
+            value = getattr(self, attr)
+            attributes.append(f"{value}")
+
+        formatted = ",".join(attributes)
+        return formatted
