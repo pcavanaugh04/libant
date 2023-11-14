@@ -646,6 +646,7 @@ class Channel(threading.Thread):
         self.status = None
         self.device_number = device_number
         self.searching = False
+        self.closing = False
 
         self.cfig_manager.put(m.AssignChannelMessage(self.number,
                                                      self._type))
@@ -672,6 +673,7 @@ class Channel(threading.Thread):
     def close(self, timeout=False):
         # Clear the channel queues to open up
         self.searching = False
+        self.closing = True
         # timeout message will close channel automatically, so only send close
         # channel control message if channel is being closed by user
         if not timeout:
@@ -689,6 +691,7 @@ class Channel(threading.Thread):
         sleep(0.5)
         # Stop thread execution
         self.stop()
+        self.closing = False
         return self.number
         # self = None
 

@@ -163,18 +163,39 @@ class ANTDevice(QObject):
         self.failure_signal.emit(emsg)
 
     def set_track_resistance(self, channel, **kwargs):
+        """Create and send a track resistance page to the device.
+
+        Parameters
+        ----------
+        channel: int
+            Number of channel the tx message should be sent on
+
+        Returns
+        -------
+        None.
+
+        """
+
         self.grade = kwargs.get("grade")
         grade = p.set_grade(channel, **kwargs)
         self.send_tx_msg(grade)
         self.node.add_msg(f"Track Resistance Command Sent: {kwargs}", channel)
 
-    def set_config(self, channel, success=True, **kwargs):
-        if success:
-            cfg = p.set_user_config(channel, **kwargs)
-            self.send_tx_msg(cfg)
-            self.node.add_msg(f"User Config Command Sent: {kwargs}", channel)
-        else:
-            pass
+    def set_config(self, channel, **kwargs):
+        """Create and send a user config page to the device.
+
+        Parameters
+        ----------
+        channel: int
+            Number of channel the tx message should be sent on
+
+        Returns
+        -------
+        None.
+        """
+        cfg = p.set_user_config(channel, **kwargs)
+        self.send_tx_msg(cfg)
+        self.node.add_msg(f"User Config Command Sent: {kwargs}", channel)
 
     def send_tx_msg(self, msg):
         """Send tx message to ANT Device"""
@@ -477,8 +498,7 @@ class ANTWindow(QMainWindow):
                                        'send user configuration message!')
             return
 
-        cfg = p.set_user_config(channel, **cfg_dict)
-        self.send_tx_msg(cfg)
+        self.ANT.send_tx_msg(channel, **cfg_dict)
 
     def send_track_resistance(self):
         grade_boxes = [self.grade_box, self.crr_box]
@@ -501,13 +521,13 @@ class ANTWindow(QMainWindow):
 
         self.ANT.set_track_resistance(channel, **grade_dict)
 
-    def send_tx_msg(self, msg):
-        tx_thread = ANTWorker(self,
-                              self.node.send_tx_msg,
-                              msg)
-        tx_thread.done_signal.connect(functools.partial(self.tx_msg_status,
-                                                        msg))
-        tx_thread.start()
+    # def send_tx_msg(self, msg):
+    #     tx_thread = ANTWorker(self,
+    #                           self.node.send_tx_msg,
+    #                           msg)
+    #     tx_thread.done_signal.connect(functools.partial(self.tx_msg_status,
+    #                                                     msg))
+    #     tx_thread.start()
 
     def tx_msg_status(self, success, msg):
         if success:
@@ -597,7 +617,9 @@ class ANTSelector(QWidget):
         # TODO: This may cause issues if trying to close in search mode. Will
         # need to verify with queue sequence
         for channel in self.ANT.node.channels:
-            if channel is not None and channel.number != dev_channel.number:
+            if (channel is not None and
+                channel.number != dev_channel.number and
+                    not channel.closing):
                 close_thread = ANTWorker(self, channel.close)
                 close_thread.done_signal.connect(self.ANT.node.clear_channel)
                 close_thread.start()
@@ -615,7 +637,7 @@ class ANTSelector(QWidget):
     def cancel(self):
         print("Device Selection Cancelled!")
         for channel in self.ANT.node.channels:
-            if channel is not None:
+            if (channel is not None) and not (channel.closing):
                 channel_close_thread = ANTWorker(self, channel.close)
                 channel_close_thread.done_signal.connect(
                     self.ANT.node.clear_channel)
