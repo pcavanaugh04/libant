@@ -205,6 +205,10 @@ class Pump(threading.Thread):
                         raise e
                     finally:
                         self._control.remove_task(w.channel, w)
+                        print(
+                            "Contents of ctrl queue at request process: "
+                            f"{list(self._control.queue)} "
+                            f"Tasks in queue: {self._control.unfinished_tasks}")
                         self._out.put_msg(msg, w.channel)
 
             # Channel Event Messages in response to control messages
@@ -224,8 +228,8 @@ class Pump(threading.Thread):
                         self._control.remove_task(w.channel, w)
                         print(
                             "Contents of ctrl queue at event process: "
-                            f"{list(self._control.queue)}"
-                            f"Size of queue: {self._control.qsize()}")
+                            f"{list(self._control.queue)} "
+                            f"Tasks in queue: {self._control.unfinished_tasks}")
                     break
 
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
@@ -277,6 +281,7 @@ class Pump(threading.Thread):
                         # print(
                         #     f"tasks left in channel out queue {com_channel._out.qsize()}")
                         # com_channel._out.get()
+                        # self._control.remove_task()
                         self._out.remove_task(msg.channel)
                         # com_channel.first_message_flag = False
 
@@ -296,7 +301,8 @@ class Pump(threading.Thread):
                 com_channel._out.task_done()
                 com_channel.first_message_flag = True
                 print(
-                    f"Contents of ctrl queue at first message flag: {list(self._control.queue)}")
+                    f"Contents of ctrl queue at first message flag: {list(self._control.queue)}"
+                    f" Tasks remaining: {self._control.unfinished_tasks}")
 
             return bmsg
 
@@ -699,6 +705,11 @@ class Channel(threading.Thread):
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
         self.cfig_manager.join()
+
+        print(
+            f"Contents of ctrl queue at first message flag: {list(self.ctrl_manager.queue)}"
+            f" Tasks remaining: {self.ctrl_manager.unfinished_tasks}")
+
         sleep(0.5)
         # Stop thread execution
         self.stop()
@@ -930,6 +941,7 @@ class QueueManager(Queue):
 
             else:
                 self.put(msg)
+                self.task_done()
                 self.send_message(channel_num=channel.number)
 
     def remove_task(self, channel_num=None, waiter=None):
