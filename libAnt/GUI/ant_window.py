@@ -248,6 +248,11 @@ class ANTWindow(QMainWindow):
         self.update_timer.setInterval(250)
         self.update_timer.timeout.connect(self.periodic_ANT_update)
 
+        # Initialze Search window and slot connections
+        self.search_window = ANTSelector(self.ANT)
+        self.search_window.selected_signal.connect(self.channel_startup)
+        self.search_window.search_signal.connect(self.device_channel_search)
+
         # def success_handler(msg):
         #     """this function is sent to the node as instructurion how to
         #     handle a successful event"""
@@ -405,7 +410,7 @@ class ANTWindow(QMainWindow):
         """
 
         # Generate a new session of ANT selector window
-        self.search_window = ANTSelector(self.ANT)
+        # self.search_window = ANTSelector(self.ANT)
         profile = self.channel_profile_combo.currentText()
         if profile == '':
             profile = None
@@ -414,32 +419,6 @@ class ANTWindow(QMainWindow):
             device_number = None
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
-        self.search_window.selected_signal.connect(self.channel_startup)
-
-    # def open_channel(self, channel=0, profile='FE-C'):
-    #     self.open_thread = ANTWorker(self,
-    #                                  self.node.open_channel,
-    #                                  channel,
-    #                                  profile=profile)
-
-        # TODO: go to node level connection method to make sure it can handle 7 requests at once
-        # 31 oct 2023 Goal - Dive into the node spot
-        # TODO: Need an intermediate connection step to indicate a successful handshake
-        # self.open_thread.done_signal.connect(self.set_connection_status)
-        # self.open_thread.done_signal.connect(
-        #     functools.partial(self.set_config, channel))
-        # self.open_thread.start()
-
-        # Depreciated open channel method
-        #     self.channel_add_num = int(self.channel_number_combo.currentText())
-        #     channel_profile = str(self.channel_profile_combo.currentText())
-        #     # self.thread_parent = QObject()
-        #     open_thread = ANTWorker(self,
-        #                             self.node.open_channel,
-        #                             self.channel_add_num,
-        #                             profile=channel_profile)
-        #     open_thread.done_signal.connect(self.channel_startup)
-        #     open_thread.start()
 
     def device_startup(self, success):
         if success:
@@ -452,6 +431,36 @@ class ANTWindow(QMainWindow):
         else:
             self.message_viewer.append("Error in Device Startup! "
                                        "Relaunch Program to try again")
+
+    def device_channel_search(self, channel_num):
+        """Search for channels with same device number as current connection.
+
+        Only will search for other channels if current device is type FE-C .
+        Use of the connect keyword will automatically connect to successful
+        pairings.
+
+        Parameters
+        ----------
+        channel_num : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        channel = self.ANT.node.channels[channel_num]
+        # Return if device is anything other than FE-C channel
+        print(
+            f"This is where we'd connect to other stuff! on channel {channel_num}")
+
+        if not channel.device_type == 17:
+            return
+
+        self.search_window.open_search_mode(
+            device_number=channel.device_number,
+            show=True,
+            connect=True)
 
     def channel_startup(self, channel_num):
         self.status_ch_number_combo.addItem(str(channel_num))
@@ -597,6 +606,7 @@ class ANTSelector(QWidget):
        select the desired one for connection
     """
     selected_signal = pyqtSignal(int)
+    search_signal = pyqtSignal(int)
 
     def __init__(self, ANT):
 
@@ -638,13 +648,16 @@ class ANTSelector(QWidget):
 
         # TODO: On the last close thread, if device is FE-C open search mode to
         # connect to other channels with same device number
-        # if dev_channel.device_type == 17:
-        #     close_thread.done_signal.connect(lambda: self.open_search_mode(
-        #         device_number=dev_channel.device_number))
-
+        close_thread.done_signal.connect(
+            lambda: self.emit_connection_channel(dev_channel.number))
         # Emit selected device channel to main program
         self.selected_signal.emit(dev_channel.number)
         self.close()
+
+    def emit_connection_channel(self, channel_num):
+        """emit signal for main program to look for additional connections.
+        """
+        self.search_signal.emit(channel_num)
 
     def cancel(self):
         print("Device Selection Cancelled!")
@@ -662,7 +675,8 @@ class ANTSelector(QWidget):
         event.accept()
         pass
 
-    def open_search_mode(self, profile=None, device_number=None):
+    def open_search_mode(self, profile=None, device_number=None, show=True,
+                         connect=False):
         """
         Initiates device search and displays avaialbe connections on pop-up.
 
@@ -692,12 +706,15 @@ class ANTSelector(QWidget):
                                         device_number=device_number)
                 # Connect open to waiter function for device connection
                 open_thread.done_signal.connect(
-                    self.wait_for_device_connection)
+                    functools.partial(self.wait_for_device_connection,
+                                      connect=connect))
                 open_thread.start()
-        # Show selector GUI window
-        self.show()
 
-    def wait_for_device_connection(self, channel_num):
+        if show:
+            # Show selector GUI window
+            self.show()
+
+    def wait_for_device_connection(self, channel_num, connect=False):
         """Wait for a device connection after opening a channel
 
         Slot for open_thread done_signal, which will provide a status and 
@@ -720,7 +737,9 @@ class ANTSelector(QWidget):
         # Connect the event handler to the completion of the waiting period.
         # the search will either timeout or add a successful connection
         wait_thread.done_signal.connect(
-            functools.partial(self.handle_pairing_event, channel_num))
+            functools.partial(self.handle_pairing_event,
+                              channel_num,
+                              connect=connect))
         wait_thread.start()
         # print(f"End of wait for device connection on channel: {channel_num}")
 
@@ -737,17 +756,20 @@ class ANTSelector(QWidget):
         self.ANT.node.clear_channel(channel.number)
         # print("End of wait for device ID!")
 
-    def handle_pairing_event(self, channel_num, channel):
+    def handle_pairing_event(self, channel_num, channel, connect=False):
 
         print("--------------In pairing event Handler----------------")
         print(f"Channel Number: {channel_num}, Channel Object: {channel}")
+
         if channel is not None:
+
+            # if connect kwarg is true, automatically select device to connect
+            if connect:
+                self.selected_signal.emit(channel.number)
+
             # Add successful channel pairing to device field
-            # self.available_devices_list.addItem(
-            #     f"{channel.id['device_number']}",
-            #     userData=channel)
-            # TODO: Look for a way to tie labels and object to one field
-            self.available_devices_list.addItem(ANTListItem(channel))
+            else:
+                self.available_devices_list.addItem(ANTListItem(channel))
 
         else:
             pass
@@ -761,7 +783,8 @@ class ANTSelector(QWidget):
 class ANTListItem(QListWidgetItem):
     def __init__(self, channel_object):
         self.channel = channel_object
-        self.profile_dict = {0: "PWR", 17: "FE-C", 120: "HR"}
+        self.profile_dict = {11: "PWR", 17: "FE-C", 120: "HR", 121: "SPD+CD",
+                             122: "CD", 123: "SPD"}
         device_number = self.channel.id["device_number"]
         profile = self.profile_dict[self.channel.id["device_type"]]
         self.label = f"{profile} {device_number}"
