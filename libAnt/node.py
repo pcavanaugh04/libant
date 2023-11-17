@@ -170,6 +170,8 @@ class Pump(threading.Thread):
                         self._onFailure(e)
                         com_channel = self._out.channels[e.channel]
                         if not com_channel.first_message_flag:
+                            # Change closing status on timed out channel
+                            com_channel.closing = True
                             # print("-----------IN Exception Handling-------------")
                             # print(
                             #     f"Channel Out queue contents: {list(com_channel._out.queue)}")
@@ -220,6 +222,10 @@ class Pump(threading.Thread):
                         return out
                     finally:
                         self._control.remove_task(w.channel, w)
+                        print(
+                            "Contents of ctrl queue at event process: "
+                            f"{list(self._control.queue)}"
+                            f"Size of queue: {self._control.qsize()}")
                     break
 
         if msg.type == c.MESSAGE_CHANNEL_EVENT:
@@ -232,6 +238,7 @@ class Pump(threading.Thread):
                         out = w.callback(msg, w.message.type)
                     except Exception as e:
                         print(f"----MESSAGE THAT CAUSED ERROR: {msg}----")
+                        print(f"Message Channel: {msg.channel}")
                         print(f"Message type: {type(msg)}")
                         print(f"Message waiter callback: {w.callback}")
                         print(f"Message waiter type: {w.message.type}")
@@ -288,6 +295,8 @@ class Pump(threading.Thread):
                 com_channel._out.get()
                 com_channel._out.task_done()
                 com_channel.first_message_flag = True
+                print(
+                    f"Contents of ctrl queue at first message flag: {list(self._control.queue)}")
 
             return bmsg
 
@@ -664,6 +673,8 @@ class Channel(threading.Thread):
     def open(self):
         self.ctrl_manager.put(m.OpenChannelMessage(self.number))
         self.searching = True
+        # print(
+        #     f"Contents of ctrl queue at open join function {list(self.ctrl_manager.queue)}")
         self.ctrl_manager.join()
         # Start Channel thread for processing I/O messages
         self.start()
@@ -702,6 +713,7 @@ class Channel(threading.Thread):
             # Channel creation starts with waiting for first successful message
             self._out.put("Blocking until First Message")
             self.searching = True
+            print(f"Before out.join in channel {self.number} run statement")
             self._out.join()
 
             # Thread will reactivate once an item has been recognized and removed

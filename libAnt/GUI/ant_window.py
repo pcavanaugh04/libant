@@ -217,6 +217,17 @@ class ANTDevice(QObject):
         else:
             self.send_tx_msg(msg)
 
+    def close_channel(self, channel_num, connection=None):
+        """Close channel and remove channel object from node."""
+        close_thread = ANTWorker(self, self.node.channels[channel_num].close,
+                                 channel_num)
+        close_thread.done_signal.connect(self.node.clear_channel)
+        if connection is not None:
+            close_thread.done_signal.connect(connection)
+        close_thread.done_signal.connect(
+            lambda: self.connection_signal.emit(False))
+        close_thread.start()
+
 
 class ANTWindow(QMainWindow):
 
@@ -459,14 +470,15 @@ class ANTWindow(QMainWindow):
         channel_num = int(self.status_ch_number_combo.currentText())
         self.combo_remove_index = self.status_ch_number_combo.currentIndex()
         close_thread = ANTWorker(self,
-                                 self.ANT.node.close_channel,
-                                 channel_num)
-        close_thread.done_signal.connect(self.channel_remove)
+                                 self.ANT.close_channel,
+                                 channel_num,
+                                 connection=self.channel_remove)
         close_thread.start()
 
-    def channel_remove(self, success):
-        if success:
-            self.status_ch_number_combo.removeItem(self.combo_remove_index)
+    def channel_remove(self, channel_num):
+        if channel_num is not None:
+            index = self.status_ch_number_combo.findText(str(channel_num))
+            self.status_ch_number_combo.removeItem(index)
             self.channel_type_box.clear()
             self.network_number_box.clear()
             self.device_id_box.clear()
@@ -498,7 +510,7 @@ class ANTWindow(QMainWindow):
                                        'send user configuration message!')
             return
 
-        self.ANT.send_tx_msg(channel, **cfg_dict)
+        self.ANT.set_config(channel, **cfg_dict)
 
     def send_track_resistance(self):
         grade_boxes = [self.grade_box, self.crr_box]
@@ -701,6 +713,7 @@ class ANTSelector(QWidget):
         None.
 
         """
+        print("Beginning of wait for device connection")
         # Initailize the waiter thread
         wait_thread = ANTWorker(self, self.wait_for_device_ID,
                                 self.ANT.node.channels[channel_num])
