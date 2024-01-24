@@ -471,6 +471,7 @@ class ANTWindow(QMainWindow):
     def channel_startup(self, channel_num):
         self.status_ch_number_combo.addItem(str(channel_num))
         ch = self.ANT.node.channels[channel_num]
+        print(ch.status)
         self.channel_type_box.setText(str(ch.status.get("channel_type")))
         self.network_number_box.setText(
             str(ch.status.get("network_number")))
@@ -756,9 +757,9 @@ class ANTSelector(QWidget):
         # Channels are thread objects and can be monitored. If search times out
         # the thread will terminate
         while channel.is_alive():
-            # Monitor if the ID attribute has been updated, indicating a
+            # Monitor if the status attribute has been updated, indicating a
             # successful connection handshake
-            if channel.id is not None:
+            if channel.status is not None:
                 return channel
             time.sleep(0.1)
         self.ANT.node.clear_channel(channel.number)
