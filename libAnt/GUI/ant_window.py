@@ -417,6 +417,7 @@ class ANTWindow(QMainWindow):
         device_number = self.device_ID_field.text()
         if device_number == '':
             device_number = None
+        print(f"Device number from open_search_selector: {device_number}")
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
 
@@ -457,6 +458,11 @@ class ANTWindow(QMainWindow):
         if not channel.device_type == 17:
             return
 
+        # Verify parameters
+        print("------ Device Channel Search Params ------")
+        print(f"Channel Adress: {channel}")
+        print(f"Channel number: {channel.number}")
+        print(f"Device Number: {channel.device_number}")
         self.search_window.open_search_mode(
             device_number=channel.device_number,
             show=True,
@@ -667,6 +673,7 @@ class ANTSelector(QWidget):
                 channel_close_thread.done_signal.connect(
                     self.ANT.node.clear_channel)
                 channel_close_thread.start()
+        self.available_devices_list.clear()
         self.close()
         pass
 
@@ -698,6 +705,7 @@ class ANTSelector(QWidget):
         # Open all available channels on the node
         for i in range(self.ANT.node.max_channels):
             # Only attempt a connection if not already initialized
+            print(f"Device Number From Open Search mode: {device_number}")
             if self.ANT.node.channels[i] is None:
                 open_thread = ANTWorker(self,
                                         self.ANT.node.open_channel,
@@ -776,6 +784,7 @@ class ANTSelector(QWidget):
             # print("Unsuccessful pairing!")
 
     def closeEvent(self, event):
+        # self.cancel()
         event.accept()
         pass
 

@@ -447,8 +447,13 @@ class Node:
                     device_type = 0x78
                     channel_msg_freq = 4.06
 
-        if device_number := kwargs.get("device_ID", None) is not None:
+        if (device_number := kwargs.get("device_number", 0)) is not None:
             device_type = 0
+
+        else:
+            device_number = 0
+
+        print(f"Device Number node.open_channel method: {device_number}")
 
         # Create channel object in node's channels list
         try:
@@ -468,6 +473,7 @@ class Node:
 
         except Exception as e:
             self.onFailure(e)
+            print(e)
             return
 
         self.onSuccess(f"Channel {channel_num} Configuration Success!\n"
@@ -685,6 +691,8 @@ class Channel(threading.Thread):
         # Start Channel thread for processing I/O messages
         self.start()
 
+        print(f"End of open method from channel: {self.number}")
+
         return self.number
 
     def close(self, timeout=False):
@@ -727,6 +735,13 @@ class Channel(threading.Thread):
             print(f"Before out.join in channel {self.number} run statement")
             self._out.join()
 
+            # Diagnositc printing of channel parameters
+            print("------------- From Inside Channel Run Method --------------")
+            print(f"Channel {self.number} Type: {self._type}")
+            print(f"Channel {self.number} Device Type: {self.device_type}")
+            print(f"Channel {self.number} Device Number: {self.device_number}")
+            print("------------- End of Channel Run Method diagnostic --------------")
+
             # Thread will reactivate once an item has been recognized and removed
             # from the queue. If the channel times out, the pump will place
             # the error message back into the output queue
@@ -756,6 +771,7 @@ class Channel(threading.Thread):
             self.searching = False
             # Identify channel parameters
             self.id = self.get_ID(disp=True)
+            self.device_number = self.id["device_number"]
             self.status = self.get_status(disp=True)
 
             # TODO: add continuous run loop after proper config
