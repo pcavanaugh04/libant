@@ -197,7 +197,7 @@ class ChannelMessagingPeriodMessage(Message):
     period is set to (messaging_period_seconds)*32768
     """
 
-    def __init__(self, channel: int, frequency: int = 4):
+    def __init__(self, channel: int, period: int = 8192):
         """
         Constructor for set messaging period message.
 
@@ -205,8 +205,9 @@ class ChannelMessagingPeriodMessage(Message):
         ----------
         channel : int
             Channel number on device being set.
-        frequency : int, optional
-            Channel messaging frequency [hz] The default value is 4hz
+        period : int, optional
+            Channel messaging period [counts], as specified in ANT+ 
+            documentation. Frequency = 32768/period The default value is 8182
 
         Returns
         -------
@@ -215,7 +216,7 @@ class ChannelMessagingPeriodMessage(Message):
         """
         content = bytearray([channel])
         content.extend(
-            int(1 / frequency * 32768).to_bytes(2, byteorder='little'))
+            int(period).to_bytes(2, byteorder='little'))
         super().__init__(c.MESSAGE_CHANNEL_PERIOD, content)
         self.channel = channel
         self.reply_type = c.MESSAGE_CHANNEL_EVENT

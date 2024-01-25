@@ -419,7 +419,7 @@ class Node:
                      channel_type=c.CHANNEL_BIDIRECTIONAL_SLAVE,
                      device_type=None,
                      channel_frequency=2457,
-                     channel_msg_freq=4,
+                     channel_msg_freq=8192,
                      channel_search_timeout=8,
                      **kwargs):
         # Some input checking
@@ -441,35 +441,46 @@ class Node:
                     device_type = 17
 
                 case 'PWR':
-                    device_type = 0
+                    device_type = 11
+                    channel_msg_freq = 8192
+
+                case 'SPD':
+                    device_type = 123
+                    channel_msg_freq = 8118
+
+                case 'CD':
+                    device_type = 122
+                    channel_msg_freq = 8102
+
+                case 'SPD+CD':
+                    device_type = 121
+                    channel_msg_freq = 8086
 
                 case 'HR':
                     device_type = 0x78
                     channel_msg_freq = 4.06
 
-        if (device_number := kwargs.get("device_number", 0)) is not None:
-            device_type = 0
-
-        else:
-            device_number = 0
+        device_number = kwargs.get("device_number", 0)
 
         print(f"Device Number node.open_channel method: {device_number}")
 
         # Create channel object in node's channels list
         try:
+            print(
+                f"Opening Channel with frequency: {channel_msg_freq}, device type: {device_type}")
             self.channels[channel_num] = Channel(self.config_manager,
                                                  self.control_manager,
                                                  self.outputs_manager,
                                                  self.tx_manager,
                                                  self.onSuccess,
                                                  self.onFailure,
-                                                 channel_num,
-                                                 channel_type,
-                                                 device_type,
-                                                 device_number,
-                                                 channel_frequency,
-                                                 channel_msg_freq,
-                                                 channel_search_timeout)
+                                                 channel_num=channel_num,
+                                                 channel_type=channel_type,
+                                                 device_type=device_type,
+                                                 device_number=device_number,
+                                                 channel_frequency=channel_frequency,
+                                                 channel_msg_freq=channel_msg_freq,
+                                                 channel_search_timeout=channel_search_timeout)
 
         except Exception as e:
             self.onFailure(e)
@@ -633,7 +644,7 @@ class Channel(threading.Thread):
                  device_type=0,
                  device_number=0,
                  channel_frequency=2457,
-                 channel_msg_freq=4,
+                 channel_msg_freq=8192,
                  channel_search_timeout=10):
 
         super().__init__()

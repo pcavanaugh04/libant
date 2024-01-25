@@ -127,7 +127,7 @@ class ANTDevice(QObject):
         self.failure_signal.connect(fail_handler)
 
         # Define avaliable Device Profiles
-        self.dev_profiles = ['FE-C', 'PWR', 'HR']
+        self.dev_profiles = ['FE-C', 'PWR', 'SPD', 'CD', 'SPD+CD', 'HR']
         self.init_node(debug=debug)
 
     def add_message(self, msg):
@@ -416,7 +416,7 @@ class ANTWindow(QMainWindow):
             profile = None
         device_number = self.device_ID_field.text()
         if device_number == '':
-            device_number = None
+            device_number = 0
         print(f"Device number from open_search_selector: {device_number}")
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
@@ -463,15 +463,16 @@ class ANTWindow(QMainWindow):
         print(f"Channel Adress: {channel}")
         print(f"Channel number: {channel.number}")
         print(f"Device Number: {channel.device_number}")
+        profiles = ['PWR', 'SPD', 'CD', 'SPD+CD']
         self.search_window.open_search_mode(
             device_number=channel.device_number,
-            show=True,
+            profiles=profiles,
+            show=False,
             connect=True)
 
     def channel_startup(self, channel_num):
         self.status_ch_number_combo.addItem(str(channel_num))
         ch = self.ANT.node.channels[channel_num]
-        print(ch.status)
         self.channel_type_box.setText(str(ch.status.get("channel_type")))
         self.network_number_box.setText(
             str(ch.status.get("network_number")))
@@ -484,7 +485,6 @@ class ANTWindow(QMainWindow):
 
     def close_channel(self):
         channel_num = int(self.status_ch_number_combo.currentText())
-        self.combo_remove_index = self.status_ch_number_combo.currentIndex()
         close_thread = ANTWorker(self,
                                  self.ANT.close_channel,
                                  channel_num,
@@ -646,9 +646,9 @@ class ANTSelector(QWidget):
         # TODO: This may cause issues if trying to close in search mode. Will
         # need to verify with queue sequence
         for channel in self.ANT.node.channels:
-            if (channel is not None and
-                channel.number != dev_channel.number and
-                    not channel.closing):
+            if (channel is not None
+                and channel.number != dev_channel.number
+                    and not channel.closing):
                 close_thread = ANTWorker(self, channel.close)
                 close_thread.done_signal.connect(self.ANT.node.clear_channel)
                 close_thread.start()
@@ -683,7 +683,10 @@ class ANTSelector(QWidget):
         event.accept()
         pass
 
-    def open_search_mode(self, profile=None, device_number=None, show=True,
+    def open_search_mode(self, profile=None,
+                         profiles=None,
+                         device_number=0,
+                         show=True,
                          connect=False):
         """
         Initiates device search and displays avaialbe connections on pop-up.
@@ -702,12 +705,18 @@ class ANTSelector(QWidget):
         None.
 
         """
-
+        i_profile = 0
         # Open all available channels on the node
         for i in range(self.ANT.node.max_channels):
             # Only attempt a connection if not already initialized
-            print(f"Device Number From Open Search mode: {device_number}")
+            # print(f"Device Number From Open Search mode: {device_number}")
             if self.ANT.node.channels[i] is None:
+                if (profiles is not None):
+                    if (len(profiles) > i_profile):
+                        profile = profiles[i_profile]
+                        i_profile += 1
+                    else:
+                        continue
                 open_thread = ANTWorker(self,
                                         self.ANT.node.open_channel,
                                         i,
