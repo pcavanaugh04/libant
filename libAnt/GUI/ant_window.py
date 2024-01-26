@@ -15,19 +15,25 @@ from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import DriverException
+from libAnt.message import BroadcastMessage
 import libAnt.exceptions as e
+import libAnt.constants as c
 import logging
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
 
 
 class ANTDevice(QObject):
+
     """Interface with ANTUSB stick to communicate with other ANT devies.
 
     An "ANT Device" will primarily refer to an FE-C enabled trainer. However
     It will eventually encapsulate all data streams coming from the device
     in question
     """
+    device_types = {
+        'FE-C': 17, 'PWR': 11, 'SPD': 123,
+        'CD': 122, 'SPD+CD': 121, 'HR': 0x78}
 
     connection_signal = pyqtSignal(bool)
     success_signal = pyqtSignal('PyQt_PyObject')
@@ -46,6 +52,9 @@ class ANTDevice(QObject):
         self.log_path = ""
         self.log_name = ""
         self.name = "trainer"
+        self.channels = []
+        self.messages = []
+        self.prev_msg_len = 0
         self.trainer_msgs = [None]
         self.data = ANTData()
         self.datas = []
@@ -58,57 +67,123 @@ class ANTDevice(QObject):
         self.FE_C_channel = None
 
         def success_handler(msg):
-            if hasattr(msg, 'build'):
+            # if hasattr(msg, 'build'):
+            if type(msg) == BroadcastMessage:
                 # If the message has a build method we know it's a broadcast
                 # message
+                # TODO: Figure out how to handle ANTData Object with multiple
+                # channels
+                # Decide which channel to store in
+                ANT_channel = self.channels[msg.channel]
 
-                # Extract power information from trainer specific data page
-                if int(msg.content[0]) == 0x19:
-                    trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
-                    self.trainer_msgs.append(trainer_msg)
-                    self.data.inst_power = trainer_msg.inst_power
-                    self.data.avg_power = trainer_msg.avg_power
-                    self.event_count = trainer_msg.event
-                    try:
-                        self.data.torque = (
-                            self.data.avg_power
-                            / (self.data.rpm / 60 * 2 * math.pi))
-                    except ZeroDivisionError:
-                        self.data.torque = 0
+                # FEC Specific Handling
+                if ANT_channel.type == self.device_types['FE-C']:
+                    # Extract power information from trainer specific data page
+                    if int(msg.content[0]) == 0x19:
+                        trainer_msg = \
+                            p.TrainerDataPage(msg, ANT_channel.prev_message)
+                        ANT_channel.messages.append(f"{trainer_msg}")
+                        self.data.inst_power = trainer_msg.inst_power
+                        self.data.avg_power = trainer_msg.avg_power
+                        # self.ANT_channel.event_count = trainer_msg.event
+                        try:
+                            self.data.torque = (
+                                self.data.avg_power
+                                / (self.data.rpm / 60 * 2 * math.pi))
+                        except ZeroDivisionError:
+                            self.data.torque = 0
 
-                    timestamp = trainer_msg.timestamp
+                        self.data.timestamp = trainer_msg.timestamp
+                        ANT_channel.data = self.data
+                        ANT_channel.data.prev_trainer_msg = trainer_msg
 
-                # Extract speed info from general FE data page
-                elif int(msg.content[0]) == 0x10:
-                    FE_msg = p.GeneralFEDataPage(msg)
-                    speed_kph = FE_msg.speed * 3600 / 10**6
-                    self.data.speed = speed_kph
-                    rpm = speed_kph * 1000 / 60 / \
-                        (math.pi * self.wheel_diameter)
-                    self.data.rpm = rpm
-                    try:
-                        self.data.torque = (self.data.avg_power
-                                            / (rpm / 60 * 2 * math.pi))
-                    except ZeroDivisionError:
-                        self.data.torque = 0
-                    timestamp = FE_msg.timestamp
+                    # Extract speed info from general FE data page
+                    elif int(msg.content[0]) == 0x10:
+                        FE_msg = p.GeneralFEDataPage(msg)
+                        speed_kph = FE_msg.speed * 3600 / 10**6
+                        self.data.speed = speed_kph
+                        rpm = speed_kph * 1000 / 60 / \
+                            (math.pi * self.wheel_diameter)
+                        self.data.rpm = rpm
+                        try:
+                            self.data.torque = (self.data.avg_power
+                                                / (rpm / 60 * 2 * math.pi))
+                        except ZeroDivisionError:
+                            self.data.torque = 0
+
+                        self.data.timestamp = FE_msg.timestamp
+                        ANT_channel.data = self.data
+
+                    else:
+                        self.data.timestamp = datetime.now()
+                        ANT_channel.data = self.data
+
+                    self.datas.append(self.data)
+
+                    # Create a new ANTData object, pre-populated with prev data
+                    # self.data = ANTData(self.data)
+
+                    # TODO: Updaet save data
+                    if self.log_data_flag:
+                        ANT_channel._save_data(ANT_channel.data)
+
+                elif ANT_channel.type == self.device_types['PWR']:
+                    ANT_channel = self.channels[msg.channel]
+                    # Case for Power-only page
+                    if int(msg.content[0] == 0x10):
+                        # Build Profile data from broadcast message
+                        power_msg = p.PowerDataPage(
+                            msg, ANT_channel.data.prev_power_message)
+                        # update data attributes for program display
+                        self.data.inst_power = power_msg.inst_power
+                        self.data.avg_power = power_msg.avg_power
+                        self.data.timestamp = power_msg.timestamp
+                        # Update channel data for saving
+                        ANT_channel.data.inst_power = power_msg.inst_power
+                        ANT_channel.data.avg_power = power_msg.inst_power
+                        ANT_channel.data.timestamp = power_msg.timestamp
+                        ANT_channel.data.prev_power_message = power_msg
+
+                    # ANT_channel.event_count = power_msg.event
+
+                    # Case for torque-only page
+                    elif int(msg.content[0] == 0x11):
+                        # Build Profile data from broadcast message
+                        torque_msg = p.TorqueDataPage(
+                            msg, ANT_channel.data.prev_torque_message)
+                        self.data.torque = power_msg.torque
+                        self.data.timestamp = torque_msg.timestamp
+                        # Build Profile data from broadcast message
+                        ANT_channel.data.torque = torque_msg.torque
+                        ANT_channel.data.avg_torque = torque_msg.avg_torque
+                        ANT_channel.data.timestamp = torque_msg.timestamp
+                        ANT_channel.data.prev_torque_message = torque_msg
+
+                    self.datas.append(self.data)
+
+                    if self.log_data_flag:
+                        ANT_channel._save_data(ANT_channel.data)
+
+                elif ANT_channel.type == self.device_types['SPD+CD']:
+                    ANT_channel = self.channels[msg.channel]
+
+                    if self.log_data_flag:
+                        ANT_channel._save_data(ANT_channel.data)
+
+                elif ANT_channel.type == self.device_types['SPD']:
+                    pass
+
+                elif ANT_channel.type == self.device_types['CD']:
+                    pass
 
                 else:
-                    timestamp = datetime.now()
+                    ANT_channel.messages.append(f'{msg}')
 
-                self.data.timestamp = timestamp
-                self.datas.append(self.data)
-
-                # Creates a new ANTData object, pre-populated with prev data
-                self.data = ANTData(self.data)
-
-                if self.log_data_flag:
-                    self._save_data(self.data)
-
-            self.add_message(msg)
+            else:
+                self.messages.append(f'{msg}')
 
         def fail_handler(msg):
-            self.add_message(msg)
+            self.messages.append(f'{msg}')
             # if isinstance(msg, RxSearchTimeout):
             #     if self.connected:
             #         # self.close_channel(connection_timeout=True)
@@ -127,18 +202,18 @@ class ANTDevice(QObject):
         self.failure_signal.connect(fail_handler)
 
         # Define avaliable Device Profiles
-        self.dev_profiles = ['FE-C', 'PWR', 'SPD', 'CD', 'SPD+CD', 'HR']
+        self.dev_profiles = list(self.device_types.keys())
         self.init_node(debug=debug)
 
-    def add_message(self, msg):
-        """Add message to node message array or respective channel"""
+    # def add_message(self, msg):
+    #     """Add message to node message array or respective channel"""
 
-        if hasattr(msg, "channel"):
-            channel = msg.channel
-        else:
-            channel = None
-        msg = str(msg)
-        self.node.add_msg(msg, channel)
+    #     if hasattr(msg, "channel"):
+    #         channel = msg.channel
+    #     else:
+    #         channel = None
+    #     msg = str(msg)
+    #     self.node.add_msg(msg, channel)
 
     def init_node(self, debug=False):
         # May need to try this a few times
@@ -229,6 +304,27 @@ class ANTDevice(QObject):
         close_thread.start()
 
 
+class ANTChannel():
+    """Store channels specific data Coming from an ANT communication stream"""
+
+    def __init__(self, number):
+        self.type = None
+        self.device_type = None
+        self.device_number = None
+        self.state = None
+        self.network_number = None
+        self.number = number
+        self.data = ANTData()
+        self.messages = []
+        self.prev_message = None
+        self.prev_msg_len = 0
+        self.event_count = None
+        self.datas = []
+
+    def _save_data(self):
+        pass
+
+
 class ANTWindow(QMainWindow):
 
     def __init__(self, ANT_device):
@@ -242,7 +338,7 @@ class ANTWindow(QMainWindow):
         self.UI_elements = uic.loadUi(path, self)
         self.ANT = ANT_device
         self.search_window = None
-        self.prev_msg_len = 0
+        self.current_channel = None
 
         self.update_timer = QTimer()
         self.update_timer.setInterval(250)
@@ -347,7 +443,7 @@ class ANTWindow(QMainWindow):
 #         self.obj.success_signal.connect(signal_handler)
 #         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
-        self.dev_profiles = ['FE-C', 'PWR', 'HR', '']
+        self.dev_profiles = self.ANT.dev_profiles
         # self.dev_profiles = ['HR', 'FE-C', 'PWR', '']
 
         # Button Connections
@@ -356,6 +452,9 @@ class ANTWindow(QMainWindow):
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(
             self.send_track_resistance)
+
+        self.status_channel_number_combo.currentIndexChanged.connect(
+            self.change_selected_channel_update)
 
     # def check_success(self, success):
     #     if success:
@@ -429,6 +528,8 @@ class ANTWindow(QMainWindow):
             self.max_channels_box.setText(str(self.ANT.node.max_channels))
             self.max_networks_box.setText(str(self.ANT.node.max_networks))
             self.channel_profile_combo.addItems(self.dev_profiles)
+            self.ANT.channels = \
+                [ANTChannel(i) for i in range(self.ANT.node.max_channels)]
         else:
             self.message_viewer.append("Error in Device Startup! "
                                        "Relaunch Program to try again")
@@ -471,20 +572,48 @@ class ANTWindow(QMainWindow):
             connect=True)
 
     def channel_startup(self, channel_num):
-        self.status_ch_number_combo.addItem(str(channel_num))
+        """Assignment updates to be performed on connection to a channel."""
+        # Add channel to available selections to view status
+        self.status_channel_number_combo.addItem(str(channel_num))
+        # Make assignments based on channel information from the node
         ch = self.ANT.node.channels[channel_num]
-        self.channel_type_box.setText(str(ch.status.get("channel_type")))
-        self.network_number_box.setText(
-            str(ch.status.get("network_number")))
-        self.device_id_box.setText(str(ch.id.get("device_number")))
-        device_type = ch.id.get("device_type")
-        self.device_type_box.setText(str(device_type))
-        if device_type == 17:
-            self.ANT.FE_C_channel = channel_num
-        self.channel_state_box.setText(str(ch.status.get("channel_state")))
+        ANT_ch = self.ANT.channels[channel_num]
+        ANT_ch.type = ch.status.get("channel_type")
+        ANT_ch.network_number = ch.status.get("network_number")
+        ANT_ch.device_type = ch.id.get("device_type")
+        ANT_ch.device_number = ch.id.get("device_number")
+        ANT_ch.state = ch.status.get("channel_state")
+        # Set data type for the channel at connection
+        match ANT_ch.device_type:
+            case 11:
+                ANT_ch.data = PWRData()
+            case 17:
+                ANT_ch.data = FECData()
+            case 121:
+                ANT_ch.data = SPDCDData()
+
+        # change index to new channel
+
+        # self.channel_field_update(ANT_ch)
+
+    def channel_field_update(self, ANT_ch):
+        """Visual updates to device fields on UI."""
+        if ANT_ch is not None:
+            self.channel_type_box.setText(str(ANT_ch.type))
+            self.network_number_box.setText(str(ANT_ch.network_number))
+            self.device_number_box.setText(str(ANT_ch.device_number))
+            self.device_type_box.setText(str(ANT_ch.device_type))
+            self.channel_state_box.setText(str(ANT_ch.state))
+
+        else:
+            self.channel_type_box.setText("N/A")
+            self.network_number_box.setText("N/A")
+            self.device_number_box.setText("N/A")
+            self.device_type_box.setText("N/A")
+            self.channel_state_box.setText("N/A")
 
     def close_channel(self):
-        channel_num = int(self.status_ch_number_combo.currentText())
+        channel_num = int(self.status_channel_number_combo.currentText())
         close_thread = ANTWorker(self,
                                  self.ANT.close_channel,
                                  channel_num,
@@ -493,8 +622,8 @@ class ANTWindow(QMainWindow):
 
     def channel_remove(self, channel_num):
         if channel_num is not None:
-            index = self.status_ch_number_combo.findText(str(channel_num))
-            self.status_ch_number_combo.removeItem(index)
+            index = self.status_channel_number_combo.findText(str(channel_num))
+            self.status_channel_number_combo.removeItem(index)
             self.channel_type_box.clear()
             self.network_number_box.clear()
             self.device_id_box.clear()
@@ -520,7 +649,7 @@ class ANTWindow(QMainWindow):
                 cfg_dict[cfg_keys[i]] = usr_in
 
         try:
-            channel = int(self.status_ch_number_combo.currentText())
+            channel = int(self.status_channel_number_combo.currentText())
         except ValueError:
             self.message_viewer.append('Error: Channel must be selected to '
                                        'send user configuration message!')
@@ -542,7 +671,7 @@ class ANTWindow(QMainWindow):
                 grade_dict[grade_keys[i]] = usr_in
 
         try:
-            channel = int(self.status_ch_number_combo.currentText())
+            channel = int(self.status_channel_number_combo.currentText())
         except ValueError:
             self.message_viewer.append('Error: Channel must be selected to '
                                        'send user configuration message!')
@@ -564,18 +693,58 @@ class ANTWindow(QMainWindow):
             self.send_tx_msg(msg)
 
     def periodic_ANT_update(self):
+        """Visual updates to window based on update timer event callback."""
+        if self.current_channel is not None:
+            ch = self.current_channel
+            if (len(ch.messages) > ch.prev_msg_len):
+                new_content = \
+                    ch.messages[ch.prev_msg_len:]
+                for x in new_content:
+                    self.message_viewer.append(x)
+                ch.prev_msg_len = len(ch.messages)
 
-        if (self.ANT.node is not None
-                and len(self.ANT.node.messages) > self.prev_msg_len):
-            new_content = self.ANT.node.messages[self.prev_msg_len:]
-            for x in new_content:
-                self.message_viewer.append(x)
-            self.prev_msg_len = len(self.ANT.node.messages)
+        else:
+            if (len(self.ANT.messages) > self.ANT.prev_msg_len):
+                new_content = self.ANT.messages[self.ANT.prev_msg_len:]
+                for x in new_content:
+                    self.message_viewer.append(x)
+                self.ANT.prev_msg_len = len(self.ANT.messages)
 
         self.power_box.setText(f"{self.ANT.data.inst_power:.1f}")
         self.speed_box.setText(f"{self.ANT.data.speed:.1f}")
         self.avg_power_box.setText(f"{self.ANT.data.avg_power:.1f}")
         self.event_box.setText(f"{self.ANT.event_count:.0f}")
+
+    def change_selected_channel_update(self):
+        """Visual updates to window when selected channel is changed."""
+        # Read new value from channel combo box
+        try:
+            current_channel_num = int(
+                self.status_channel_number_combo.currentText())
+        # Case if blank ('') value is read indicating no channel
+        except ValueError:
+            self.current_channel = None
+        else:
+            self.current_channel = self.ANT.channels[current_channel_num]
+        # Clear Previous Messages
+        self.message_viewer.clear()
+
+        if self.current_channel is not None:
+            # Updates to device fields
+            self.channel_field_update(self.current_channel)
+
+            # Updates to message viewer
+            # Structure message contents
+            bulk_append_msgs = "\n".join(self.current_channel.messages)
+            self.message_viewer.setPlainText(bulk_append_msgs)
+
+        else:
+            # Updates to device fields
+            self.channel_field_update(None)
+            # Updates to message viewer
+            # Structure message contents
+            bulk_append_msgs = "\n".join(self.ANT.messages)
+            self.message_viewer.setPlainText(bulk_append_msgs)
 
     @pyqtSlot()
     def returnPressedSlot():
@@ -587,7 +756,7 @@ class ANTWindow(QMainWindow):
         """Pyqt decorator."""
         pass
 
-    @pyqtSlot()
+    @ pyqtSlot()
     def browseSlot(self):
         """Pyqt decorator."""
         pass
@@ -735,7 +904,7 @@ class ANTSelector(QWidget):
     def wait_for_device_connection(self, channel_num, connect=False):
         """Wait for a device connection after opening a channel
 
-        Slot for open_thread done_signal, which will provide a status and 
+        Slot for open_thread done_signal, which will provide a status and
         channel number of successful channel open event
 
         Parameters
@@ -812,7 +981,17 @@ class ANTListItem(QListWidgetItem):
 
 
 class ANTData():
-    """Object to hold ANT data."""
+    """Object to hold ANT data.
+
+        Data will be a program-level container for storing relevant device data
+        It will be updated by recieved data on any channel within the device 
+        and will be referenced by the main program to update visual data
+
+        Note: data will be written to file at the channel level. Each channel
+        tracked by the device will save to an independent data file for post
+        analysis
+
+    """
 
     _ATTRIBUTES = ["timestamp", "inst_power",
                    "avg_power", "speed", "rpm", "torque"]
@@ -847,3 +1026,95 @@ class ANTData():
 
         formatted = ",".join(attributes)
         return formatted
+
+
+class FECData(ANTData):
+    """Object to hold Data coming from FE-C profile ANT Devices."""
+
+    _ATTRIBUTES = ["timestamp", "inst_power",
+                   "avg_power", "speed", "rpm", "torque"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, message, data=None):
+        """Accept message and update attributes depending on type"""
+        self.timestamp = ""
+        self.prev_trainer_msg = None
+
+        if data is not None and isinstance(data, ANTData):
+            self.inst_power = data.inst_power
+            self.avg_power = data.avg_power
+            self.speed = data.speed
+            self.rpm = data.rpm
+            self.torque = data.torque
+        else:
+            self.inst_power = 0
+            self.avg_power = 0
+            self.speed = 0
+            self.rpm = 0
+            self.torque = 0
+
+
+class PWRData(ANTData):
+    """Object to hold Data coming from PWR profile ANT Devices."""
+
+    _ATTRIBUTES = ["timestamp", "inst_power",
+                   "avg_power", "torque"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, data=None):
+        self.timestamp = ""
+        self.prev_power_msg = None
+        self.prev_torque_msg = None
+
+        if data is not None and isinstance(data, PWRData):
+            self.inst_power = data.inst_power
+            self.avg_power = data.avg_power
+            self.torque = data.torque
+        else:
+            self.inst_power = 0
+            self.avg_power = 0
+            self.torque = 0
+
+
+class SPDData(ANTData):
+    """Object to hold Data coming from SPD profile ANT Devices."""
+
+    _ATTRIBUTES = ["timestamp", "speed", "rpm"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, data=None):
+        self.timestamp = ""
+
+        if data is not None and isinstance(data, SPDData):
+            self.speed = data.speed
+            self.rpm = data.rpm
+        else:
+            self.speed = 0
+            self.rpm = 0
+
+
+class CDData(ANTData):
+    """Object to hold Data coming from CD profile ANT Devices."""
+
+    _ATTRIBUTES = ["timestamp", "rpm", "torque"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, data=None):
+        pass
+
+
+class SPDCDData(ANTData):
+    """Object to hold Data coming from SPD+CD profile ANT Devices."""
+
+    _ATTRIBUTES = ["timestamp", "speed", "rpm"]
+    _DATA_HEADER = ",".join(_ATTRIBUTES)
+
+    def __init__(self, data=None):
+        self.timestamp = ""
+
+        if data is not None and isinstance(data, SPDCDData):
+            self.speed = data.speed
+            self.rpm = data.rpm
+        else:
+            self.speed = 0
+            self.rpm = 0

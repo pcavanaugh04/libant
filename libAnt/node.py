@@ -410,7 +410,7 @@ class Node:
 
     def assign_network(self, network_num: int = 0,
                        network_key=c.ANTPLUS_NETWORK_KEY):
-        """Assign network key to device. Default is ANT+ network"""
+        """Assign network key to device. Default is ANT+ network."""
         self.config_manager.put(
             m.SetNetworkKeyMessage(network_num, network_key))
         self.config_manager.join()
@@ -439,10 +439,11 @@ class Node:
             match kwargs.get('profile'):
                 case 'FE-C':
                     device_type = 17
+                    channel_msg_freq = 8192
 
                 case 'PWR':
                     device_type = 11
-                    channel_msg_freq = 8192
+                    channel_msg_freq = 8182
 
                 case 'SPD':
                     device_type = 123
@@ -784,6 +785,7 @@ class Channel(threading.Thread):
             self.id = self.get_ID(disp=True)
             self.device_number = self.id["device_number"]
             self.status = self.get_status(disp=True)
+            # TODO: request device manufactuerer, model, and SN
 
             # TODO: add continuous run loop after proper config
             while not self._stop_event.isSet():
