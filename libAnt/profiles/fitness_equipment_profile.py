@@ -183,7 +183,7 @@ class TrainerDataPage:
         self.timestamp = datetime.now()
 
     def __str__(self):
-        return super().__str__() + ' Power: {0:.0f}W'.format(self.average_power)
+        return super().__str__() + ' Power: {0:.0f}W'.format(self.avg_power)
 
     @lazyproperty
     def page_number(self):

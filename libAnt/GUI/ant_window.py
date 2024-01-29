@@ -21,16 +21,17 @@ import libAnt.constants as c
 import logging
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
+import libAnt.profiles.power_profile as pwr
 
 
 class ANTDevice(QObject):
-
     """Interface with ANTUSB stick to communicate with other ANT devies.
 
     An "ANT Device" will primarily refer to an FE-C enabled trainer. However
     It will eventually encapsulate all data streams coming from the device
     in question
     """
+
     device_types = {
         'FE-C': 17, 'PWR': 11, 'SPD': 123,
         'CD': 122, 'SPD+CD': 121, 'HR': 0x78}
@@ -77,7 +78,7 @@ class ANTDevice(QObject):
                 ANT_channel = self.channels[msg.channel]
 
                 # FEC Specific Handling
-                if ANT_channel.type == self.device_types['FE-C']:
+                if ANT_channel.device_type == self.device_types['FE-C']:
                     # Extract power information from trainer specific data page
                     if int(msg.content[0]) == 0x19:
                         trainer_msg = \
@@ -123,17 +124,17 @@ class ANTDevice(QObject):
                     # Create a new ANTData object, pre-populated with prev data
                     # self.data = ANTData(self.data)
 
-                    # TODO: Updaet save data
-                    if self.log_data_flag:
+                    # TODO: Update save data
+                    if ANT_channel.log_data_flag:
                         ANT_channel._save_data(ANT_channel.data)
 
-                elif ANT_channel.type == self.device_types['PWR']:
+                elif ANT_channel.device_type == self.device_types['PWR']:
                     ANT_channel = self.channels[msg.channel]
                     # Case for Power-only page
                     if int(msg.content[0] == 0x10):
                         # Build Profile data from broadcast message
-                        power_msg = p.PowerDataPage(
-                            msg, ANT_channel.data.prev_power_message)
+                        power_msg = pwr.PowerDataPage(
+                            msg, ANT_channel.data.prev_power_msg)
                         # update data attributes for program display
                         self.data.inst_power = power_msg.inst_power
                         self.data.avg_power = power_msg.avg_power
@@ -149,7 +150,7 @@ class ANTDevice(QObject):
                     # Case for torque-only page
                     elif int(msg.content[0] == 0x11):
                         # Build Profile data from broadcast message
-                        torque_msg = p.TorqueDataPage(
+                        torque_msg = pwr.TorqueDataPage(
                             msg, ANT_channel.data.prev_torque_message)
                         self.data.torque = power_msg.torque
                         self.data.timestamp = torque_msg.timestamp
@@ -161,19 +162,20 @@ class ANTDevice(QObject):
 
                     self.datas.append(self.data)
 
-                    if self.log_data_flag:
+                    if ANT_channel.log_data_flag:
                         ANT_channel._save_data(ANT_channel.data)
 
-                elif ANT_channel.type == self.device_types['SPD+CD']:
-                    ANT_channel = self.channels[msg.channel]
+                elif ANT_channel.device_type == self.device_types['SPD+CD']:
+                    pass
+                    #     ANT_channel = self.channels[msg.channel]
 
-                    if self.log_data_flag:
-                        ANT_channel._save_data(ANT_channel.data)
+                    #     if ANT_channel.log_data_flag:
+                    #         ANT_channel._save_data(ANT_channel.data)
 
-                elif ANT_channel.type == self.device_types['SPD']:
+                elif ANT_channel.device_type == self.device_types['SPD']:
                     pass
 
-                elif ANT_channel.type == self.device_types['CD']:
+                elif ANT_channel.device_type == self.device_types['CD']:
                     pass
 
                 else:
@@ -308,8 +310,10 @@ class ANTChannel():
     """Store channels specific data Coming from an ANT communication stream"""
 
     def __init__(self, number):
+        self.is_active = False
         self.type = None
-        self.device_type = None
+        self._device_type = None
+        self._profile = None
         self.device_number = None
         self.state = None
         self.network_number = None
@@ -320,9 +324,98 @@ class ANTChannel():
         self.prev_msg_len = 0
         self.event_count = None
         self.datas = []
+        self.file_open_flag = False
+        self.log_data_flag = False
+        self.log_name = ""
+        self.log_path = ""
+        self.log_start_time = None
+        self.log_file = None
+        self._device_profiles = \
+            {value: key for key, value in ANTDevice.device_types.items()}
 
-    def _save_data(self):
-        pass
+    @property
+    def device_type(self):
+        return self._device_type
+
+    @device_type.setter
+    def device_type(self, value):
+        if value in self._device_profiles:
+            self._device_type = value
+            self._profile = self._device_profiles[value]
+        else:
+            raise ValueError(f"Invalid device type: {value}")
+
+    @property
+    def profile(self):
+        return self._profile
+
+    def _open_log_file(self):
+        """Open a file to record sensor data.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        None
+        """
+        # TODO: Make sure theres a good way to set log_name attribute
+        file_name = f"{self.log_name}-{self.profile}_data.csv"
+        # msg_file_name = f"{self.log_name}-{self.name}_messages.csv"
+        self.log_file_path = os.path.join(self.log_path, file_name)
+        # msg_file_path = os.path.join(self.log_path, msg_file_name)
+        self.log_file = open(self.log_file_path, 'w')
+        # self.msg_file = open(msg_file_path, 'w')
+
+        # Write data header to first line of file
+        self.log_file.write(
+            f"datetime,elapsed_time,{self.data._DATA_HEADER}\n")
+        # self.msg_file.write("datetime,message\n")
+
+        self.file_open_flag = True
+        self.log_start_time = datetime.now()
+        # logger.console(f"Data Logging Started for {self.name}. "
+        #                f"File names: {file_name}, {msg_file_name}")
+
+    def close_log_file(self):
+        """Check and close data file if required.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.log_data_flag = False
+
+        if self.file_open_flag:
+            self.log_file.close()
+            # self.msg_file.close()
+            self.file_open_flag = False
+            # logger.console(f"Saving data stopped for {self.name}")
+
+    def _save_data(self, data):
+        """Save data object as line in data file in log file."""
+
+        # Open log file
+        if not self.file_open_flag:
+            self._open_log_file()
+            print("We should be getting to the file open function here")
+            # self.prev_msg_len = len(self.node.messages)
+
+        # format data into csv for saving
+        data_time = (datetime.now() - self.log_start_time).total_seconds()
+        formatted_data = data.get_formatted()
+
+        # write to file
+        self.log_file.write(f"{datetime.now()},{data_time},{formatted_data}\n")
+
+        # Write to messages file
+        # if len(self.messages) > self.prev_msg_len:
+        #     new_content = self.node.messages[self.prev_msg_len:]
+        #     for x in new_content:
+        #         self.msg_file.write(f"{x}\n")
+        #     self.prev_msg_len = len(self.node.messages)
 
 
 class ANTWindow(QMainWindow):
@@ -453,6 +546,9 @@ class ANTWindow(QMainWindow):
         self.track_resistance_button.clicked.connect(
             self.send_track_resistance)
 
+        # Demo Save Data button
+        self.save_data_button.clicked.connect(self.save_data_test)
+
         self.status_channel_number_combo.currentIndexChanged.connect(
             self.change_selected_channel_update)
 
@@ -578,6 +674,7 @@ class ANTWindow(QMainWindow):
         # Make assignments based on channel information from the node
         ch = self.ANT.node.channels[channel_num]
         ANT_ch = self.ANT.channels[channel_num]
+        ANT_ch.is_active = True
         ANT_ch.type = ch.status.get("channel_type")
         ANT_ch.network_number = ch.status.get("network_number")
         ANT_ch.device_type = ch.id.get("device_type")
@@ -746,6 +843,34 @@ class ANTWindow(QMainWindow):
             bulk_append_msgs = "\n".join(self.ANT.messages)
             self.message_viewer.setPlainText(bulk_append_msgs)
 
+    def save_data_test(self):
+        """Test function to demo save features of multichannel ANT handling."""
+
+        print("Do we get into the save method?")
+        # Check to see if files are currently open
+        if any([channel.log_data_flag for channel in self.ANT.channels]):
+            print("Do we get into the close channel?")
+            for channel in self.ANT.channels:
+                if channel.is_active:
+                    channel.close_log_file()
+            return
+
+        # otherwise generate a new data log
+        else:
+            print("Do we get into the save init?")
+            save_location = r"C:\homologationTemp"
+            timestamp_str = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+            test_name = "ANT_multichannel_save_test"
+            save_folder_dir = \
+                os.path.join(save_location, f"{timestamp_str}-{test_name}")
+            os.mkdir(save_folder_dir)
+
+            for channel in self.ANT.channels:
+                if channel.is_active:
+                    channel.log_name = "Test_Log"
+                    channel.log_path = save_folder_dir
+                    channel.log_data_flag = True
+
     @pyqtSlot()
     def returnPressedSlot():
         """Pyqt decorator."""
@@ -756,7 +881,7 @@ class ANTWindow(QMainWindow):
         """Pyqt decorator."""
         pass
 
-    @ pyqtSlot()
+    @pyqtSlot()
     def browseSlot(self):
         """Pyqt decorator."""
         pass
@@ -983,13 +1108,13 @@ class ANTListItem(QListWidgetItem):
 class ANTData():
     """Object to hold ANT data.
 
-        Data will be a program-level container for storing relevant device data
-        It will be updated by recieved data on any channel within the device 
-        and will be referenced by the main program to update visual data
+    Data will be a program-level container for storing relevant device data
+    It will be updated by recieved data on any channel within the device
+    and will be referenced by the main program to update visual data
 
-        Note: data will be written to file at the channel level. Each channel
-        tracked by the device will save to an independent data file for post
-        analysis
+    Note: data will be written to file at the channel level. Each channel
+    tracked by the device will save to an independent data file for post
+    analysis
 
     """
 
@@ -1035,8 +1160,8 @@ class FECData(ANTData):
                    "avg_power", "speed", "rpm", "torque"]
     _DATA_HEADER = ",".join(_ATTRIBUTES)
 
-    def __init__(self, message, data=None):
-        """Accept message and update attributes depending on type"""
+    def __init__(self, data=None):
+        """Accept message and update attributes depending on type."""
         self.timestamp = ""
         self.prev_trainer_msg = None
 
