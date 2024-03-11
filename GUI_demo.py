@@ -5,7 +5,8 @@ Created on Tue Mar 14 18:10:13 2023
 @author: patri
 """
 
-from libAnt.GUI.ant_window import ANTWindow, ANTDevice
+from libAnt.GUI.ant_window import ANTWindow
+from libAnt.ANT_device import ANTDevice
 import sys
 import os
 from PyQt5.QtWidgets import QApplication
