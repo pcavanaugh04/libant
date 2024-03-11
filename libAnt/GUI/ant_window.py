@@ -396,6 +396,10 @@ class ANTWindow(QMainWindow):
 
     def periodic_ANT_update(self):
         """Visual updates to window based on update timer event callback."""
+        # Check position of scroll bar
+        scroll_position = self.message_viewer.verticalScrollBar().value()
+        is_at_bottom = scroll_position == self.message_viewer.verticalScrollBar().maximum()
+
         if self.current_channel is not None:
             ch = self.current_channel
             if (len(ch.messages) > ch.prev_msg_len):
@@ -411,6 +415,9 @@ class ANTWindow(QMainWindow):
                 for x in new_content:
                     self.message_viewer.append(x)
                 self.ANT.prev_msg_len = len(self.ANT.messages)
+
+        if not is_at_bottom:
+            self.message_viewer.verticalScrollBar().setValue(scroll_position)
 
         self.power_box.setText(f"{self.ANT.data.inst_power:.1f}")
         self.speed_box.setText(f"{self.ANT.data.speed:.1f}")

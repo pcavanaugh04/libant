@@ -6,71 +6,20 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>997</width>
-    <height>853</height>
+    <width>1057</width>
+    <height>743</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>MainWindow</string>
   </property>
-  <widget class="QFrame" name="messages_frame">
-   <property name="geometry">
-    <rect>
-     <x>395</x>
-     <y>11</y>
-     <width>360</width>
-     <height>831</height>
-    </rect>
-   </property>
-   <property name="minimumSize">
-    <size>
-     <width>360</width>
-     <height>0</height>
-    </size>
-   </property>
-   <property name="frameShape">
-    <enum>QFrame::NoFrame</enum>
-   </property>
-   <property name="frameShadow">
-    <enum>QFrame::Raised</enum>
-   </property>
-   <layout class="QVBoxLayout" name="verticalLayout_4">
-    <item>
-     <widget class="QLabel" name="label">
-      <property name="font">
-       <font>
-        <pointsize>11</pointsize>
-        <weight>75</weight>
-        <bold>true</bold>
-       </font>
-      </property>
-      <property name="text">
-       <string>ANT Messages</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QTextEdit" name="message_viewer">
-      <property name="minimumSize">
-       <size>
-        <width>0</width>
-        <height>500</height>
-       </size>
-      </property>
-      <property name="readOnly">
-       <bool>true</bool>
-      </property>
-     </widget>
-    </item>
-   </layout>
-  </widget>
   <widget class="QFrame" name="readout_frame">
    <property name="geometry">
     <rect>
-     <x>760</x>
-     <y>10</y>
-     <width>224</width>
-     <height>831</height>
+     <x>798</x>
+     <y>9</y>
+     <width>245</width>
+     <height>140</height>
     </rect>
    </property>
    <property name="frameShape">
@@ -195,10 +144,10 @@
   <widget class="QWidget" name="layoutWidget">
    <property name="geometry">
     <rect>
-     <x>0</x>
-     <y>0</y>
+     <x>9</x>
+     <y>9</y>
      <width>402</width>
-     <height>811</height>
+     <height>703</height>
     </rect>
    </property>
    <layout class="QVBoxLayout" name="verticalLayout_5">
@@ -1072,6 +1021,78 @@
         </widget>
        </item>
       </layout>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <widget class="QFrame" name="message_viewer_frame">
+   <property name="geometry">
+    <rect>
+     <x>417</x>
+     <y>9</y>
+     <width>375</width>
+     <height>711</height>
+    </rect>
+   </property>
+   <property name="minimumSize">
+    <size>
+     <width>375</width>
+     <height>0</height>
+    </size>
+   </property>
+   <property name="maximumSize">
+    <size>
+     <width>400</width>
+     <height>16777215</height>
+    </size>
+   </property>
+   <property name="frameShape">
+    <enum>QFrame::NoFrame</enum>
+   </property>
+   <property name="frameShadow">
+    <enum>QFrame::Raised</enum>
+   </property>
+   <layout class="QVBoxLayout" name="verticalLayout_4">
+    <property name="spacing">
+     <number>1</number>
+    </property>
+    <property name="leftMargin">
+     <number>5</number>
+    </property>
+    <property name="bottomMargin">
+     <number>5</number>
+    </property>
+    <item>
+     <widget class="QLabel" name="label">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>40</height>
+       </size>
+      </property>
+      <property name="font">
+       <font>
+        <pointsize>14</pointsize>
+        <weight>75</weight>
+        <bold>true</bold>
+       </font>
+      </property>
+      <property name="text">
+       <string>ANT Messages</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QTextEdit" name="message_viewer">
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>16777215</height>
+       </size>
+      </property>
+      <property name="readOnly">
+       <bool>true</bool>
+      </property>
      </widget>
     </item>
    </layout>
