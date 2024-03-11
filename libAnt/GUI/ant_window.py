@@ -32,8 +32,10 @@ class ANTWindow(QMainWindow):
         # Initialize superclass
         QMainWindow.__init__(self)
         # Load the graphical layout
-        path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
-        self.UI_elements = uic.loadUi(path, self)
+        file_path = os.path.abspath(__file__)
+        ui_path = os.path.join(os.path.dirname(file_path), "ant_UI.ui")
+        # path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
+        self.UI_elements = uic.loadUi(ui_path, self)
         self.ANT = ANT_device
         self.search_window = None
         self.current_channel = None
@@ -509,8 +511,9 @@ class ANTSelector(QWidget):
         # Initialize superclass
         super(QWidget, self).__init__()
         # Load the graphical layout
-        path = "libAnt/GUI/ant_selection.ui"
-        self.UI_elements = uic.loadUi(path, self)
+        file_path = os.path.abspath(__file__)
+        ui_path = os.path.join(os.path.dirname(file_path), "ant_selection.ui")
+        self.UI_elements = uic.loadUi(ui_path, self)
 
         # Button Connections
         self.select_device_button.clicked.connect(self.select_device)
