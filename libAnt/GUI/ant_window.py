@@ -23,14 +23,16 @@ import functools
 # import libAnt.profiles.power_profile as pwr
 
 
-class ANTWindow(QMainWindow):
+class ANTWindow(QWidget):
 
-    def __init__(self, ANT_device):
+    window_closed = pyqtSignal()
+
+    def __init__(self, ANT_device, is_child=False):
         # Load UI elements
         self.program_start_time = datetime.now()
 
         # Initialize superclass
-        QMainWindow.__init__(self)
+        QWidget.__init__(self)
         # Load the graphical layout
         file_path = os.path.abspath(__file__)
         ui_path = os.path.join(os.path.dirname(file_path), "ant_UI.ui")
@@ -39,6 +41,7 @@ class ANTWindow(QMainWindow):
         self.ANT = ANT_device
         self.search_window = None
         self.current_channel = None
+        self.is_child = is_child
 
         self.update_timer = QTimer()
         self.update_timer.setInterval(250)
@@ -49,102 +52,8 @@ class ANTWindow(QMainWindow):
         self.search_window.selected_signal.connect(self.channel_startup)
         self.search_window.search_signal.connect(self.device_channel_search)
 
-        # def success_handler(msg):
-        #     """this function is sent to the node as instructurion how to
-        #     handle a successful event"""
-
-        #     if hasattr(msg, 'build'):
-        #         # If the message has a build method we know it's a broadcast
-        #         # message
-
-        #         # Extract power information from trainer specific data page
-        #         if int(msg.content[0]) == 0x19:
-        #             trainer_msg = p.TrainerDataPage(msg, self.trainer_msgs[-1])
-        #             self.trainer_msgs.append(trainer_msg)
-        #             self.data.inst_power = trainer_msg.inst_power
-        #             self.data.avg_power = trainer_msg.avg_power
-        #             self.event_count = trainer_msg.event
-        #             try:
-        #                 self.data.torque = (
-        #                     self.data.avg_power
-        #                     / (self.data.rpm / 60 * 2 * math.pi))
-        #             except ZeroDivisionError:
-        #                 self.data.torque = 0
-
-        #             timestamp = trainer_msg.timestamp
-
-        #         # Extract speed info from general FE data page
-        #         elif int(msg.content[0]) == 0x10:
-        #             FE_msg = p.GeneralFEDataPage(msg)
-        #             speed_kph = FE_msg.speed * 3600 / 10**6
-        #             self.data.speed = speed_kph
-        #             rpm = speed_kph * 1000 / 60 / \
-        #                 (math.pi * ANT().wheel_diameter)
-        #             self.data.rpm = rpm
-        #             try:
-        #                 self.data.torque = (self.data.avg_power
-        #                                     / (rpm / 60 * 2 * math.pi))
-        #             except ZeroDivisionError:
-        #                 self.data.torque = 0
-        #             timestamp = FE_msg.timestamp
-
-        #         else:
-        #             timestamp = datetime.now()
-
-        #         self.data.timestamp = timestamp
-        #         self.datas.append(self.data)
-
-        #         # Creates a new ANTData object, pre-populated with prev data
-        #         self.data = ANTData(self.data)
-
-        #         if self.log_data_flag:
-        #             self._save_data(self.data)
-
-        #     msg = str(msg)
-        #     self.node.add_msg(msg)
-
-        # Define Signal/Slot Relationship for emitting success and failure
-
-        # class HandlerObject(QObject):
-        #     success_signal = pyqtSignal('PyQt_PyObject')
-        #     failure_signal = pyqtSignal('PyQt_PyObject')
-
-        #     def __init__(self):
-        #         super().__init__()
-
-        #     def callback(self, msg):
-        #         self.success_signal.emit(msg)
-
-        #     def error_callback(self, emsg):
-        #         self.failure_signal.emit(emsg)
-
-        # self.obj = HandlerObject()
-        # self.prev_trainer_msg = None
-
-        # def signal_handler(msg):
-        #     if hasattr(msg, 'build') and int(msg.content[0]) == 0x19:
-        #         trainer_msg = p.TrainerDataPage(msg, self.prev_trainer_msg)
-        #         self.trainer_msgs.append(trainer_msg)
-        #         self.power_box.setText(str(trainer_msg.inst_power))
-        #         self.event_box.setText(str(trainer_msg.event))
-        #         self.avg_power_box.setText(str(trainer_msg.avg_power))
-        #         self.prev_trainer_msg = trainer_msg
-
-        #     if hasattr(msg, 'channel'):
-        #         channel = msg.channel
-
-        #     else:
-        #         channel = None
-
-        #     msg = str(msg)
-        #     self.node.add_msg(msg, channel_num=channel)
-        #     # self.message_viewer.append(msg)
-
-#         self.obj.success_signal.connect(signal_handler)
-#         self.obj.failure_signal.connect(signal_handler)
         # Define avaliable Device Profiles
         self.dev_profiles = self.ANT.dev_profiles
-        # self.dev_profiles = ['HR', 'FE-C', 'PWR', '']
 
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
@@ -160,32 +69,39 @@ class ANTWindow(QMainWindow):
             self.change_selected_channel_update)
         self.status_channel_number_combo.addItem("Node")
 
-    # def check_success(self, success):
-    #     if success:
-    #         print("Operation Success!")
-
-    #     else:
-    #         print("Operation Failed!")
-
     def closeEvent(self, event):
-        # Close and terminate ANT Node
-        if self.ANT.node is not None:
-            end_thread = ANTWorker(self, self.ANT.node.stop)
-            end_thread.start()
-            end_thread.finished.connect(
-                lambda: QTimer.singleShot(0, self.close_application))
-        else:
-            QTimer.singleShot(100, self.close_application)
+        """Overwrite close method with implementation specific functions.
 
-        # Close search selector if visible
-        if self.search_window is not None and self.search_window.isVisible():
-            self.search_window.close()
+        If window is standalone, is_child attribute will be false and close
+        event will trigger terminiation of the program, otherwise, window will
+        become invisible but continue functioning as normal
+        """
 
         self.update_timer.stop()
+        self.window_closed.emit()
 
-        # Remove Package Additions to Path
-        sys.path.pop(0)
-        event.accept()
+        # Close search selector if visible
+        if self.search_window is not None:
+            self.search_window.close()
+
+        if self.is_child:
+            event.accept()
+            return
+
+        else:
+
+            # Close and terminate ANT Node
+            if self.ANT.node is not None:
+                end_thread = ANTWorker(self, self.ANT.node.stop)
+                end_thread.start()
+                end_thread.finished.connect(
+                    lambda: QTimer.singleShot(0, self.close_application))
+            else:
+                QTimer.singleShot(100, self.close_application)
+
+            # Remove Package Additions to Path
+            sys.path.pop(0)
+            event.accept()
 
     def close_application(self):
         """Remove handlers from root logger on close."""
