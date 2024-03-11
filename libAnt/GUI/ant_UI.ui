@@ -486,7 +486,7 @@
           <widget class="QComboBox" name="status_channel_number_combo">
            <property name="maximumSize">
             <size>
-             <width>45</width>
+             <width>60</width>
              <height>16777215</height>
             </size>
            </property>

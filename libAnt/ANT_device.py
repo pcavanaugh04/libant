@@ -50,9 +50,9 @@ class ANTDevice(QObject):
         # Attributes used for writing sensor data to file
         self.log_file = None
         self.file_open_flag = False
-        self.log_data_flag = False
-        self.log_path = ""
-        self.log_name = ""
+        self._log_data_flag = False
+        self._log_path = ""
+        self._log_name = ""
         self.name = "trainer"
         self.channels = []
         self.messages = []
@@ -69,7 +69,7 @@ class ANTDevice(QObject):
         self.FE_C_channel = None
 
         def success_handler(msg):
-            # if hasattr(msg, 'build'):
+
             if type(msg) == BroadcastMessage:
                 # If the message has a build method we know it's a broadcast
                 # message
@@ -84,7 +84,7 @@ class ANTDevice(QObject):
                     if int(msg.content[0]) == 0x19:
                         trainer_msg = \
                             p.TrainerDataPage(msg, ANT_channel.prev_message)
-                        ANT_channel.messages.append(f"{trainer_msg}")
+                        # ANT_channel.messages.append(f"{trainer_msg}")
                         self.data.inst_power = trainer_msg.inst_power
                         self.data.avg_power = trainer_msg.avg_power
                         # self.ANT_channel.event_count = trainer_msg.event
@@ -120,17 +120,11 @@ class ANTDevice(QObject):
                         self.data.timestamp = datetime.now()
                         ANT_channel.data = self.data
 
-                    self.datas.append(self.data)
-
                     # Create a new ANTData object, pre-populated with prev data
                     # self.data = ANTData(self.data)
 
-                    # TODO: Update save data
-                    if ANT_channel.log_data_flag:
-                        ANT_channel._save_data(ANT_channel.data)
-
                 elif ANT_channel.device_type == self.device_types['PWR']:
-                    ANT_channel = self.channels[msg.channel]
+
                     # Case for Power-only page
                     if int(msg.content[0] == 0x10):
                         # Build Profile data from broadcast message
@@ -161,17 +155,18 @@ class ANTDevice(QObject):
                         ANT_channel.data.timestamp = torque_msg.timestamp
                         ANT_channel.data.prev_torque_message = torque_msg
 
-                    self.datas.append(self.data)
-
-                    if ANT_channel.log_data_flag:
-                        ANT_channel._save_data(ANT_channel.data)
-
                 elif ANT_channel.device_type == self.device_types['SPD+CD']:
                     pass
-                    #     ANT_channel = self.channels[msg.channel]
-
-                    #     if ANT_channel.log_data_flag:
-                    #         ANT_channel._save_data(ANT_channel.data)
+                    # # Build Profile data from broadcast message
+                    # torque_msg = pwr.TorqueDataPage(
+                    #     msg, ANT_channel.data.prev_torque_message)
+                    # self.data.torque = power_msg.torque
+                    # self.data.timestamp = torque_msg.timestamp
+                    # # Build Profile data from broadcast message
+                    # ANT_channel.data.torque = torque_msg.torque
+                    # ANT_channel.data.avg_torque = torque_msg.avg_torque
+                    # ANT_channel.data.timestamp = torque_msg.timestamp
+                    # ANT_channel.data.prev_torque_message = torque_msg
 
                 elif ANT_channel.device_type == self.device_types['SPD']:
                     pass
@@ -180,13 +175,23 @@ class ANTDevice(QObject):
                     pass
 
                 else:
-                    ANT_channel.messages.append(f'{msg}')
+                    pass
+                    # ANT_channel.messages.append(f'{msg}')
+
+                if self.log_data_flag:
+                    ANT_channel._save_data(ANT_channel.data)
+
+                self.datas.append(self.data)
+                ANT_channel.messages.append(f'{msg}')
 
             else:
                 self.messages.append(f'{msg}')
 
         def fail_handler(msg):
-            self.messages.append(f'{msg}')
+            if hasattr(msg, 'channel'):
+                self.channels[msg.channel].messages.append(f'{msg}')
+            else:
+                self.messages.append(f'{msg}')
             # if isinstance(msg, RxSearchTimeout):
             #     if self.connected:
             #         # self.close_channel(connection_timeout=True)
@@ -306,6 +311,42 @@ class ANTDevice(QObject):
             lambda: self.connection_signal.emit(False))
         close_thread.start()
 
+    @property
+    def log_name(self):
+        """log_name attribute getter."""
+        return self._log_name
+
+    @log_name.setter
+    def log_name(self, log_name: str):
+        self._log_name = log_name
+        for channel in self.channels:
+            if channel.is_active:
+                channel.log_name = log_name
+
+    @property
+    def log_path(self):
+        """log_path attribute getter."""
+        return self._log_path
+
+    @log_path.setter
+    def log_path(self, log_path: str):
+        self._log_name = log_path
+        for channel in self.channels:
+            if channel.is_active:
+                channel.log_path = log_path
+
+    @property
+    def log_data_flag(self):
+        """Getter for log_data_flag attribute."""
+        return self._log_data_flag
+
+    @log_data_flag.setter
+    def log_data_flag(self, set_value: bool):
+        self._log_data_flag = set_value
+        for channel in self.channels:
+            if channel.is_active:
+                channel.log_data_flag = set_value
+
 
 class ANTChannel():
     """Store channels specific data Coming from an ANT communication stream"""
@@ -326,7 +367,7 @@ class ANTChannel():
         self.event_count = None
         self.datas = []
         self.file_open_flag = False
-        self.log_data_flag = False
+        self._log_data_flag = False
         self.log_name = ""
         self.log_path = ""
         self.log_start_time = None
@@ -349,6 +390,19 @@ class ANTChannel():
     @property
     def profile(self):
         return self._profile
+
+    @property
+    def log_data_flag(self):
+        return self._log_data_flag
+
+    @log_data_flag.setter
+    def log_data_flag(self, set_value: bool):
+        self._log_data_flag = set_value
+        if set_value:
+            self._open_log_file()
+
+        else:
+            self.close_log_file()
 
     def _open_log_file(self):
         """Open a file to record sensor data.
@@ -387,7 +441,6 @@ class ANTChannel():
         None.
 
         """
-        self.log_data_flag = False
 
         if self.file_open_flag:
             self.log_file.close()
@@ -397,12 +450,6 @@ class ANTChannel():
 
     def _save_data(self, data):
         """Save data object as line in data file in log file."""
-
-        # Open log file
-        if not self.file_open_flag:
-            self._open_log_file()
-            print("We should be getting to the file open function here")
-            # self.prev_msg_len = len(self.node.messages)
 
         # format data into csv for saving
         data_time = (datetime.now() - self.log_start_time).total_seconds()

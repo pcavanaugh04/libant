@@ -156,6 +156,7 @@ class ANTWindow(QMainWindow):
 
         self.status_channel_number_combo.currentIndexChanged.connect(
             self.change_selected_channel_update)
+        self.status_channel_number_combo.addItem("Node")
 
     # def check_success(self, success):
     #     if success:
@@ -295,8 +296,8 @@ class ANTWindow(QMainWindow):
                 ANT_ch.data = SPDCDData()
 
         # change index to new channel
-
-        # self.channel_field_update(ANT_ch)
+        if str(channel_num) == self.status_channel_number_combo.currentText():
+            self.channel_field_update(ANT_ch)
 
     def channel_field_update(self, ANT_ch):
         """Visual updates to device fields on UI."""
@@ -435,6 +436,7 @@ class ANTWindow(QMainWindow):
             self.current_channel = None
         else:
             self.current_channel = self.ANT.channels[current_channel_num]
+
         # Clear Previous Messages
         self.message_viewer.clear()
 
@@ -454,18 +456,13 @@ class ANTWindow(QMainWindow):
             # Structure message contents
             bulk_append_msgs = "\n".join(self.ANT.messages)
             self.message_viewer.setPlainText(bulk_append_msgs)
+            # self.message_viewer.verticalScrollBar().setValue(
+            #     self.message_viewer.verticalScrollBar().maximum())
 
     def save_data_test(self):
         """Test function to demo save features of multichannel ANT handling."""
-
-        print("Do we get into the save method?")
-        # Check to see if files are currently open
-        if any([channel.log_data_flag for channel in self.ANT.channels]):
-            print("Do we get into the close channel?")
-            for channel in self.ANT.channels:
-                if channel.is_active:
-                    channel.close_log_file()
-            return
+        if self.ANT.log_data_flag:
+            self.ANT.log_data_flag = False
 
         # otherwise generate a new data log
         else:
@@ -477,11 +474,9 @@ class ANTWindow(QMainWindow):
                 os.path.join(save_location, f"{timestamp_str}-{test_name}")
             os.mkdir(save_folder_dir)
 
-            for channel in self.ANT.channels:
-                if channel.is_active:
-                    channel.log_name = "Test_Log"
-                    channel.log_path = save_folder_dir
-                    channel.log_data_flag = True
+            self.ANT.log_name = "Test_Log"
+            self.ANT.log_path = save_folder_dir
+            self.ANT.log_data_flag = True
 
     @pyqtSlot()
     def returnPressedSlot():
