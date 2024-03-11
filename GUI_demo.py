@@ -5,20 +5,20 @@ Created on Tue Mar 14 18:10:13 2023
 @author: patri
 """
 
+from libAnt.GUI.ant_window import ANTWindow
+from libAnt.ANT_device import ANTDevice
 import sys
 import os
-
-parent_dir = os.path.abspath(os.path.join(os.getcwd(), '..'))
-sys.path.append(parent_dir)
-
 from PyQt5.QtWidgets import QApplication
-from GUI.main_window import MainWindow
+
+sys.path.insert(0, os.path.abspath(os.getcwd()))
 
 
 if __name__ == "__main__":
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    w = MainWindow()
+    ANT = ANTDevice(debug=True)
+    w = ANTWindow(ANT)
     w.show()
     app.exec_()
