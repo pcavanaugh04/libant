@@ -23,6 +23,7 @@ from libAnt.message import BroadcastMessage
 import functools
 import libAnt.profiles.fitness_equipment_profile as p
 import libAnt.profiles.power_profile as pwr
+import libAnt.profiles.speed_cadence_profile as scp
 
 
 class ANTDevice(QObject):
@@ -156,7 +157,21 @@ class ANTDevice(QObject):
                         ANT_channel.data.prev_torque_message = torque_msg
 
                 elif ANT_channel.device_type == self.device_types['SPD+CD']:
-                    pass
+                    if int(msg.content[0] == 0x00):
+                        # Build profile data from broadcast message
+                        spd_cd_msg = scp.SpeedCadencePage(
+                            msg,
+                            self.wheel_diameter,
+                            ANTChannel.data.prev_message)
+                        # update data attributes for program display
+                        self.data.cadence = spd_cd_msg.cadence
+                        self.data.speed = spd_cd_msg.speed
+                        self.data.timestamp = spd_cd_msg.timestamp
+                        # Update channel data for saving
+                        ANT_channel.data.cadence = spd_cd_msg.cadence
+                        ANT_channel.data.speed = spd_cd_msg.speed
+                        ANT_channel.data.timestamp = spd_cd_msg.timestamp
+
                     # # Build Profile data from broadcast message
                     # torque_msg = pwr.TorqueDataPage(
                     #     msg, ANT_channel.data.prev_torque_message)
@@ -509,12 +524,15 @@ class ANTData():
             self.speed = data.speed
             self.rpm = data.rpm
             self.torque = data.torque
+            self.cadence = data.cadence
+
         else:
             self.inst_power = 0
             self.avg_power = 0
             self.speed = 0
             self.rpm = 0
             self.torque = 0
+            self.cadence = 0
 
     def get_formatted(self):
         """Return comma separated list of values."""
