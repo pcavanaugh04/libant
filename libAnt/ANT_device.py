@@ -83,8 +83,9 @@ class ANTDevice(QObject):
                 if ANT_channel.device_type == self.device_types['FE-C']:
                     # Extract power information from trainer specific data page
                     if int(msg.content[0]) == 0x19:
-                        trainer_msg = \
-                            p.TrainerDataPage(msg, ANT_channel.prev_message)
+                        trainer_msg = p.TrainerDataPage(
+                            msg,
+                            ANT_channel.prev_trainer_msg)
                         # ANT_channel.messages.append(f"{trainer_msg}")
                         self.data.inst_power = trainer_msg.inst_power
                         self.data.avg_power = trainer_msg.avg_power
@@ -171,17 +172,6 @@ class ANTDevice(QObject):
                         ANT_channel.data.cadence = spd_cd_msg.cadence
                         ANT_channel.data.speed = spd_cd_msg.speed
                         ANT_channel.data.timestamp = spd_cd_msg.timestamp
-
-                    # # Build Profile data from broadcast message
-                    # torque_msg = pwr.TorqueDataPage(
-                    #     msg, ANT_channel.data.prev_torque_message)
-                    # self.data.torque = power_msg.torque
-                    # self.data.timestamp = torque_msg.timestamp
-                    # # Build Profile data from broadcast message
-                    # ANT_channel.data.torque = torque_msg.torque
-                    # ANT_channel.data.avg_torque = torque_msg.avg_torque
-                    # ANT_channel.data.timestamp = torque_msg.timestamp
-                    # ANT_channel.data.prev_torque_message = torque_msg
 
                 elif ANT_channel.device_type == self.device_types['SPD']:
                     pass
@@ -517,6 +507,7 @@ class ANTData():
         """Init a new instance, with option to carryover previous data."""
 
         self.timestamp = ""
+        self.prev_message = None
 
         if data is not None and isinstance(data, ANTData):
             self.inst_power = data.inst_power
