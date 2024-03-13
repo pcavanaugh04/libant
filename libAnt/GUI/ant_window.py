@@ -5,7 +5,7 @@ Created on Tue Mar 14 18:14:15 2023.
 """
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QListWidgetItem
 from PyQt5 import uic
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, Qt
 import sys
 import os
 import time
@@ -116,7 +116,7 @@ class ANTWindow(QWidget):
         self.update_timer.start()
         event.accept()
 
-    def initialize_ANT_device(self):
+    def initialize_ANT_device(self, return_thread=False):
         """Perform necessary checks and handling of ANT device Initialization.
 
         Checks existance of proper hardware and starts USB loop if successful
@@ -132,30 +132,43 @@ class ANTWindow(QWidget):
         # If successful, connect subsequent functions and start thread
         else:
             if start_thread is not None:
-                start_thread.done_signal.connect(self.device_startup)
-                start_thread.done_signal.connect(self.open_search_selection)
-                start_thread.start()
+                start_thread.done_signal.connect(
+                    self.node_startup_visual_update)
+                start_thread.done_signal.connect(self.ANT.init_channels)
+
+                if return_thread:
+                    return start_thread
+
+                else:
+                    start_thread.start()
 
     def open_search_selection(self):
         """Open UI and start channel search function for ANT devices.
 
         Method opens all available channels on Node and waits for successful
-        connection to any ANT devices in proximity
+        connection to any ANT devices in proximity of specified type
         """
 
-        # Generate a new session of ANT selector window
-        # self.search_window = ANTSelector(self.ANT)
+        # Verify ANT Node has been initialized and is running
+        if (self.ANT.node is None) or (self.ANT.node.max_channels == 0):
+            self.message_viewer.append(
+                "Error! Cannot Open Search without properly initialized Node!")
+            return
+
+        # Read any user inputs to search parameters
         profile = self.channel_profile_combo.currentText()
         if profile == '':
             profile = None
         device_number = self.device_ID_field.text()
         if device_number == '':
             device_number = 0
-        print(f"Device number from open_search_selector: {device_number}")
+
+        # Generate a new session of ANT selector window
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
 
-    def device_startup(self, success):
+    def node_startup_visual_update(self, success):
+        """Callback for visual updates upon successful node USB loop start."""
         if success:
             self.name_box.setText(
                 str(self.ANT.node._pump._driver._dev._product))
@@ -163,11 +176,10 @@ class ANTWindow(QWidget):
             self.max_channels_box.setText(str(self.ANT.node.max_channels))
             self.max_networks_box.setText(str(self.ANT.node.max_networks))
             self.channel_profile_combo.addItems(self.dev_profiles)
-            self.ANT.channels = \
-                [ANTChannel(i) for i in range(self.ANT.node.max_channels)]
+
         else:
             self.message_viewer.append("Error in Device Startup! "
-                                       "Relaunch Program to try again")
+                                       "Check device hardware and reinitialize")
 
     def device_channel_search(self, channel_num):
         """Search for channels with same device number as current connection.
@@ -485,6 +497,7 @@ class ANTSelector(QWidget):
         """emit signal for main program to look for additional connections.
         """
         self.search_signal.emit(channel_num)
+        self.ANT.update_connection_status(connected=True)
 
     def cancel(self):
         print("Device Selection Cancelled!")
@@ -500,6 +513,7 @@ class ANTSelector(QWidget):
 
     def showEvent(self, event):
         # Open all available channels on the node
+        self.status_label.setText("Searching For Devices...")
         event.accept()
         pass
 
@@ -607,6 +621,8 @@ class ANTSelector(QWidget):
 
             # Add successful channel pairing to device field
             else:
+                self.status_label.setText(
+                    "Devices Found! Select From List Below")
                 self.available_devices_list.addItem(ANTListItem(channel))
 
         else:

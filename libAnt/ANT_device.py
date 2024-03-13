@@ -57,6 +57,7 @@ class ANTDevice(QObject):
         self._log_path = ""
         self._log_name = ""
         self.name = "trainer"
+        self.connected = False
         self.channels = []
         self.messages = []
         self.prev_msg_len = 0
@@ -87,7 +88,7 @@ class ANTDevice(QObject):
                     if int(msg.content[0]) == 0x19:
                         trainer_msg = p.TrainerDataPage(
                             msg,
-                            ANT_channel.prev_trainer_msg)
+                            ANT_channel.data.prev_trainer_msg)
                         # ANT_channel.messages.append(f"{trainer_msg}")
                         self.data.inst_power = trainer_msg.inst_power
                         self.data.avg_power = trainer_msg.avg_power
@@ -231,6 +232,9 @@ class ANTDevice(QObject):
 
     def init_node(self, debug=False):
         """Checks to see if specified ANT USB Stick Hardware is recognized."""
+        if self.node is not None:
+            return
+
         fail_count = 0
         # Iterate through loop until fail criteria is met
         while True:
@@ -275,6 +279,17 @@ class ANTDevice(QObject):
                                          self.callback,
                                          self.error_callback)
                 return start_thread
+
+    def init_channels(self, success):
+        """Initialize channel attribures of ANT device."""
+        if success:
+            self.channels = \
+                [ANTChannel(i) for i in range(self.node.max_channels)]
+
+    def update_connection_status(self, connected: bool):
+        """Update connected attribute and emit connected signal."""
+        self.connected = connected
+        self.connection_signal.emit(connected)
 
     @pyqtSlot()
     def callback(self, msg):
@@ -581,6 +596,7 @@ class FECData(ANTData):
 
     def __init__(self, data=None):
         """Accept message and update attributes depending on type."""
+        super().__init__()
         self.timestamp = ""
         self.prev_trainer_msg = None
 
@@ -606,6 +622,8 @@ class PWRData(ANTData):
     _DATA_HEADER = ",".join(_ATTRIBUTES)
 
     def __init__(self, data=None):
+        super().__init__()
+
         self.timestamp = ""
         self.prev_power_msg = None
         self.prev_torque_msg = None
@@ -627,6 +645,7 @@ class SPDData(ANTData):
     _DATA_HEADER = ",".join(_ATTRIBUTES)
 
     def __init__(self, data=None):
+        super().__init__()
         self.timestamp = ""
 
         if data is not None and isinstance(data, SPDData):

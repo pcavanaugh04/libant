@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>Form</class>
- <widget class="QWidget" name="Form">
+ <class>ANTSelectionInterface</class>
+ <widget class="QWidget" name="ANTSelectionInterface">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -17,9 +17,9 @@
    <property name="geometry">
     <rect>
      <x>20</x>
-     <y>50</y>
+     <y>70</y>
      <width>221</width>
-     <height>151</height>
+     <height>131</height>
     </rect>
    </property>
   </widget>
@@ -90,6 +90,19 @@
    </property>
    <property name="text">
     <string>Cancel</string>
+   </property>
+  </widget>
+  <widget class="QLabel" name="status_label">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>44</y>
+     <width>221</width>
+     <height>16</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Searching For Devices...</string>
    </property>
   </widget>
  </widget>
