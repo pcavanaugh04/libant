@@ -43,6 +43,8 @@ class ANTDevice(QObject):
     failure_signal = pyqtSignal('PyQt_PyObject')
     tx_success = pyqtSignal('PyQt_PyObject')
 
+    USB_DRIVER_FAIL_THRESHOLD = 3  # Attempts to init USB Node before failing
+
     def __init__(self, debug=False):
         super().__init__()
         self.node = None
@@ -216,7 +218,6 @@ class ANTDevice(QObject):
 
         # Define avaliable Device Profiles
         self.dev_profiles = list(self.device_types.keys())
-        self.init_node(debug=debug)
 
     # def add_message(self, msg):
     #     """Add message to node message array or respective channel"""
@@ -229,18 +230,51 @@ class ANTDevice(QObject):
     #     self.node.add_msg(msg, channel)
 
     def init_node(self, debug=False):
-        # May need to try this a few times
+        """Checks to see if specified ANT USB Stick Hardware is recognized."""
         fail_count = 0
-        while fail_count < 3:
+        # Iterate through loop until fail criteria is met
+        while True:
             try:
+                # Try to initialize Node with specified ANT USBStick-2 or -m
+                # driver characteristics
                 self.node = Node(debug=debug)
+                return  # Exit the loop if initialization succeeds
             except DriverException as e:
-                if fail_count == 2:
-                    print(e)
-
                 fail_count += 1
-            else:
-                return
+                if fail_count > self.USB_DRIVER_FAIL_THRESHOLD:
+                    raise e
+
+    def init_start_node_thread(self):
+        """Start the USB loop of the ANT USB Node.
+
+        Function will attempt to construct the USB node and determine if
+        starting the thread is necessary. Returns the start 
+        thread object if created so calling objects can connect signals upon
+        completion. Calling function will need to connect slots to completion
+        signals and start the thread.
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        start_thread: ANTWorker
+        Instance of worker thread created to execute the node start function
+        and completion monitoring.
+        """
+        try:
+            self.init_node(debug=self.debug)
+        except DriverException as e:
+            raise e
+
+        else:
+            if (self.node is not None) and (not self.node.isRunning()):
+                start_thread = ANTWorker(self,
+                                         self.node.start,
+                                         self.callback,
+                                         self.error_callback)
+                return start_thread
 
     @pyqtSlot()
     def callback(self, msg):

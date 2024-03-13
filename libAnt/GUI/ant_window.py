@@ -13,7 +13,7 @@ from datetime import datetime
 from libAnt.ANT_device import ANTWorker, ANTChannel, PWRData, FECData, SPDCDData
 from PyQt5.QtCore import pyqtSlot, pyqtSignal
 # from libAnt.node import Node
-# from libAnt.drivers.usb import DriverException
+from libAnt.drivers.usb import DriverException
 # from libAnt.message import BroadcastMessage
 # import libAnt.exceptions as e
 # import libAnt.constants as c
@@ -69,6 +69,9 @@ class ANTWindow(QWidget):
             self.change_selected_channel_update)
         self.status_channel_number_combo.addItem("Node")
 
+        # Device initialization button
+        self.init_device_button.clicked.connect(self.initialize_ANT_device)
+
     def closeEvent(self, event):
         """Overwrite close method with implementation specific functions.
 
@@ -109,17 +112,29 @@ class ANTWindow(QWidget):
         logging.getLogger().root.handlers.clear()
 
     def showEvent(self, event):
-        if self.ANT.node is not None and not self.ANT.node.isRunning():
-            start_thread = ANTWorker(self,
-                                     self.ANT.node.start,
-                                     self.ANT.callback,
-                                     self.ANT.error_callback)
-            start_thread.done_signal.connect(self.device_startup)
-            start_thread.done_signal.connect(self.open_search_selection)
-            start_thread.start()
 
         self.update_timer.start()
         event.accept()
+
+    def initialize_ANT_device(self):
+        """Perform necessary checks and handling of ANT device Initialization.
+
+        Checks existance of proper hardware and starts USB loop if successful
+        """
+        # Try initialzing node and start thread
+        try:
+            start_thread = self.ANT.init_start_node_thread()
+
+        except DriverException as e:
+            print(f"Exception in USB device initialization! Error Message: {e}"
+                  " Please check USB hardware and try again")
+
+        # If successful, connect subsequent functions and start thread
+        else:
+            if start_thread is not None:
+                start_thread.done_signal.connect(self.device_startup)
+                start_thread.done_signal.connect(self.open_search_selection)
+                start_thread.start()
 
     def open_search_selection(self):
         """Open UI and start channel search function for ANT devices.
