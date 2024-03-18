@@ -51,6 +51,8 @@ class ANTWindow(QWidget):
         self.search_window = ANTSelector(self.ANT)
         self.search_window.selected_signal.connect(self.channel_startup)
         self.search_window.search_signal.connect(self.device_channel_search)
+        self.search_window.timeout_signal.connect(
+            self.handle_search_selector_timeout)
 
         # Define avaliable Device Profiles
         self.dev_profiles = self.ANT.dev_profiles
@@ -237,6 +239,8 @@ class ANTWindow(QWidget):
                 ANT_ch.data = PWRData()
             case 17:
                 ANT_ch.data = FECData()
+                print("DO WE GET HERE?????")
+                print("A")
             case 121:
                 ANT_ch.data = SPDCDData()
 
@@ -404,6 +408,11 @@ class ANTWindow(QWidget):
             # self.message_viewer.verticalScrollBar().setValue(
             #     self.message_viewer.verticalScrollBar().maximum())
 
+    def handle_search_selector_timeout(self):
+        """Visual updates when search selector function times out."""
+        self.message_viewer.append(
+            "Selection Process Timeout. No devices available!")
+
     def save_data_test(self):
         """Test function to demo save features of multichannel ANT handling."""
         if self.ANT.log_data_flag:
@@ -445,6 +454,8 @@ class ANTSelector(QWidget):
     """
     selected_signal = pyqtSignal(int)
     search_signal = pyqtSignal(int)
+    timeout_signal = pyqtSignal(bool)
+    CHANNEL_TIMEOUT_COUNT_THRESHOLD = 2
 
     def __init__(self, ANT):
 
@@ -461,6 +472,8 @@ class ANTSelector(QWidget):
         # Button Connections
         self.select_device_button.clicked.connect(self.select_device)
         self.cancel_selection_button.clicked.connect(self.cancel)
+        self.timeout_counter = 0
+        self.searching = False
         # self.update_timer = QTimer()
         # self.update_timer.timeout.connect(self.update)
         # self.update_timer.internal_timer.stop()
@@ -490,6 +503,7 @@ class ANTSelector(QWidget):
         close_thread.done_signal.connect(
             lambda: self.emit_connection_channel(dev_channel.number))
         # Emit selected device channel to main program
+        self.searching = False
         self.selected_signal.emit(dev_channel.number)
         self.close()
 
@@ -555,7 +569,8 @@ class ANTSelector(QWidget):
                                         self.ANT.node.open_channel,
                                         i,
                                         profile=profile,
-                                        device_number=device_number)
+                                        device_number=device_number,
+                                        channel_search_timeout=2)
                 # Connect open to waiter function for device connection
                 open_thread.done_signal.connect(
                     functools.partial(self.wait_for_device_connection,
@@ -626,11 +641,15 @@ class ANTSelector(QWidget):
                 self.available_devices_list.addItem(ANTListItem(channel))
 
         else:
-            pass
-            # print("Unsuccessful pairing!")
+            self.timeout_counter += 1
+            print("Unsuccessful pairing!")
+            if self.timeout_counter == self.CHANNEL_TIMEOUT_COUNT_THRESHOLD:
+                self.timeout_signal.emit(False)
+                self.cancel()
 
     def closeEvent(self, event):
-        # self.cancel()
+        if self.searching:
+            self.cancel()
         event.accept()
         pass
 

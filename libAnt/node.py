@@ -770,7 +770,7 @@ class Channel(threading.Thread):
                 if isinstance(err, ex.RxSearchTimeout):
                     # self._out.put("Temp String")
                     # self._out.join()
-                    print("Made it to the close statement")
+                    # print("Made it to the close statement")
                     self.close(timeout=True)
                     self.searching = False
                     return
