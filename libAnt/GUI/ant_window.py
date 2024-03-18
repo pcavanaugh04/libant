@@ -412,6 +412,10 @@ class ANTWindow(QWidget):
         """Visual updates when search selector function times out."""
         self.message_viewer.append(
             "Selection Process Timeout. No devices available!")
+        self.search_window.status_label.setText(
+            "Device Search Timeout! Closing Search Window...")
+        self.ANT.logger.warn("Timeout occurred! Closing serach window.")
+        QTimer.singleShot(3000, self.search_window.cancel)
 
     def save_data_test(self):
         """Test function to demo save features of multichannel ANT handling."""
@@ -553,6 +557,10 @@ class ANTSelector(QWidget):
         None.
 
         """
+        # restart timeout counter
+        self.timeout_counter = 0
+        self.searchnig = True
+
         i_profile = 0
         # Open all available channels on the node
         for i in range(self.ANT.node.max_channels):
@@ -569,8 +577,7 @@ class ANTSelector(QWidget):
                                         self.ANT.node.open_channel,
                                         i,
                                         profile=profile,
-                                        device_number=device_number,
-                                        channel_search_timeout=2)
+                                        device_number=device_number)
                 # Connect open to waiter function for device connection
                 open_thread.done_signal.connect(
                     functools.partial(self.wait_for_device_connection,
@@ -644,8 +651,8 @@ class ANTSelector(QWidget):
             self.timeout_counter += 1
             print("Unsuccessful pairing!")
             if self.timeout_counter == self.CHANNEL_TIMEOUT_COUNT_THRESHOLD:
+                self.searching = False
                 self.timeout_signal.emit(False)
-                self.cancel()
 
     def closeEvent(self, event):
         if self.searching:

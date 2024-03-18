@@ -13,12 +13,17 @@ from PyQt5.QtWidgets import QApplication
 
 sys.path.insert(0, os.path.abspath(os.getcwd()))
 
+from libAnt.logger_factory import LoggerFactory
+
 
 if __name__ == "__main__":
 
+    # Set up Logging Functionality and Saving Locations
+    logger = LoggerFactory()
+
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    ANT = ANTDevice(debug=True)
+    ANT = ANTDevice(debug=True, logger=logger.name)
     w = ANTWindow(ANT)
     w.show()
     app.exec_()

@@ -72,11 +72,14 @@ class RxFailGoToSearch(Exception):
         self.channel = channel
 
 # Exceptions to Be implemented
+
+
 class ChannelInWrongState(Exception):
     def __init__(self, msg):
-        message = ("Error: Channel in Wrong State for Message"
-                   f"Type: {msg.type}")
         self.channel = msg.content[0]
+        self.response_to = msg.content[1]
+        message = (f"Error: Channel {self.channel} in Wrong State for Message"
+                   f"Type: {self.response_to}")
         super().__init__(message)
         pass
 

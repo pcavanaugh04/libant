@@ -45,7 +45,7 @@ class ANTDevice(QObject):
 
     USB_DRIVER_FAIL_THRESHOLD = 3  # Attempts to init USB Node before failing
 
-    def __init__(self, debug=False):
+    def __init__(self, debug=False, logger=None):
         super().__init__()
         self.node = None
         self.connected = False
@@ -71,6 +71,9 @@ class ANTDevice(QObject):
         # self.wheel_diameter = None
         self.wheel_diameter = 0.7
         self.FE_C_channel = None
+
+        # Pass in logger functionality
+        self.logger = logger
 
         def success_handler(msg):
 
