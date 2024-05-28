@@ -16,7 +16,7 @@ class SpeedCadencePage(ProfileMessage):
 
     def __init__(self, msg, wheel_diameter, previous=None):
         super().__init__(msg, previous)
-        self.wheel_diameter
+        self.wheel_diameter = wheel_diameter
         self.msg = msg
         self.previous = previous
         self.timestamp = datetime.now()
@@ -111,6 +111,7 @@ class SpeedCadencePage(ProfileMessage):
         else:
             return self.cumulative_cadence_rev_count - self.previous.cumulative_cadence_rev_count
 
+    @lazyproperty
     def speed(self):
         """
         :param c: circumference of the wheel (mm)
@@ -122,8 +123,11 @@ class SpeedCadencePage(ProfileMessage):
             # if self.staleSpeedCounter > self.maxstaleSpeedCounter:
             #     return 0
             return self.previous.speed
-        return self.speed_rev_count_diff * 1.024 * self.wheel_diameter / self.speed_event_time_diff
+        ret_value = self.speed_rev_count_diff * 1.024 * \
+            self.wheel_diameter / self.speed_event_time_diff
+        return ret_value
 
+    @lazyproperty
     def distance(self):
         """
         :param c: circumference of the wheel (mm)
@@ -131,6 +135,7 @@ class SpeedCadencePage(ProfileMessage):
         """
         return self.speed_rev_count_diff * self.wheel_diameter / 1000
 
+    @lazyproperty
     def total_distance(self):
         """
         :param c: circumference of the wheel (mm)

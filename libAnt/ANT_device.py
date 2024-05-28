@@ -78,13 +78,8 @@ class ANTDevice(QObject):
         def success_handler(msg):
 
             if type(msg) == BroadcastMessage:
-                # If the message has a build method we know it's a broadcast
-                # message
-                # TODO: Figure out how to handle ANTData Object with multiple
-                # channels
                 # Decide which channel to store in
                 ANT_channel = self.channels[msg.channel]
-
                 # FEC Specific Handling
                 if ANT_channel.device_type == self.device_types['FE-C']:
                     # Extract power information from trainer specific data page
@@ -104,7 +99,7 @@ class ANTDevice(QObject):
                             self.data.torque = 0
 
                         self.data.timestamp = trainer_msg.timestamp
-                        ANT_channel.data = self.data
+                        ANT_channel.data = FECData(data=self.data)
                         ANT_channel.data.prev_trainer_msg = trainer_msg
 
                     # Extract speed info from general FE data page
@@ -122,11 +117,11 @@ class ANTDevice(QObject):
                             self.data.torque = 0
 
                         self.data.timestamp = FE_msg.timestamp
-                        ANT_channel.data = self.data
+                        ANT_channel.data = FECData(data=self.data)
 
                     else:
                         self.data.timestamp = datetime.now()
-                        ANT_channel.data = self.data
+                        ANT_channel.data = FECData(self.data)
 
                     # Create a new ANTData object, pre-populated with prev data
                     # self.data = ANTData(self.data)
@@ -146,7 +141,7 @@ class ANTDevice(QObject):
                         ANT_channel.data.inst_power = power_msg.inst_power
                         ANT_channel.data.avg_power = power_msg.inst_power
                         ANT_channel.data.timestamp = power_msg.timestamp
-                        ANT_channel.data.prev_power_message = power_msg
+                        ANT_channel.data.prev_power_msg = power_msg
 
                     # ANT_channel.event_count = power_msg.event
 
@@ -154,11 +149,10 @@ class ANTDevice(QObject):
                     elif int(msg.content[0] == 0x11):
                         # Build Profile data from broadcast message
                         torque_msg = pwr.TorqueDataPage(
-                            msg, ANT_channel.data.prev_torque_message)
-                        self.data.torque = power_msg.torque
+                            msg, ANT_channel.data.prev_torque_msg)
+                        self.data.avg_torque = torque_msg.avg_torque
                         self.data.timestamp = torque_msg.timestamp
                         # Build Profile data from broadcast message
-                        ANT_channel.data.torque = torque_msg.torque
                         ANT_channel.data.avg_torque = torque_msg.avg_torque
                         ANT_channel.data.timestamp = torque_msg.timestamp
                         ANT_channel.data.prev_torque_message = torque_msg
@@ -169,10 +163,10 @@ class ANTDevice(QObject):
                         spd_cd_msg = scp.SpeedCadencePage(
                             msg,
                             self.wheel_diameter,
-                            ANTChannel.data.prev_message)
+                            ANT_channel.data.prev_message)
                         # update data attributes for program display
-                        self.data.cadence = spd_cd_msg.cadence
-                        self.data.speed = spd_cd_msg.speed
+                        self.data.cadence = float(spd_cd_msg.cadence)
+                        self.data.speed = float(spd_cd_msg.speed)
                         self.data.timestamp = spd_cd_msg.timestamp
                         # Update channel data for saving
                         ANT_channel.data.cadence = spd_cd_msg.cadence
@@ -356,6 +350,19 @@ class ANTDevice(QObject):
             pass
         else:
             self.send_tx_msg(msg)
+
+    def disconnect(self):
+        """Disconnect all active channels on the ANT device."""
+
+        for channel in self.node.channels:
+            if (channel is not None) and not (channel.closing):
+                channel_close_thread = ANTWorker(self, channel.close)
+                channel_close_thread.done_signal.connect(
+                    self.node.clear_channel)
+                channel_close_thread.start()
+
+            channel_close_thread.done_signal.connect(
+                lambda: self.update_connection_status(False))
 
     def close_channel(self, channel_num, connection=None):
         """Close channel and remove channel object from node."""
@@ -677,6 +684,7 @@ class SPDCDData(ANTData):
 
     def __init__(self, data=None):
         self.timestamp = ""
+        self.prev_message = None
 
         if data is not None and isinstance(data, SPDCDData):
             self.speed = data.speed

@@ -239,6 +239,8 @@ class ANTWindow(QWidget):
                 ANT_ch.data = PWRData()
             case 17:
                 ANT_ch.data = FECData()
+                print(f"------ {ANT_ch.data.prev_trainer_msg} ------")
+                print(f"ANT Channel Address: {ANT_ch.data}")
                 print("DO WE GET HERE?????")
                 print("A")
             case 121:
@@ -476,8 +478,8 @@ class ANTSelector(QWidget):
         # Button Connections
         self.select_device_button.clicked.connect(self.select_device)
         self.cancel_selection_button.clicked.connect(self.cancel)
-        self.timeout_counter = 0
         self.searching = False
+        self.timeout_timer = QTimer()
         # self.update_timer = QTimer()
         # self.update_timer.timeout.connect(self.update)
         # self.update_timer.internal_timer.stop()
@@ -525,6 +527,7 @@ class ANTSelector(QWidget):
                 channel_close_thread.done_signal.connect(
                     self.ANT.node.clear_channel)
                 channel_close_thread.start()
+        self.ANT.update_connection_status(False)
         self.available_devices_list.clear()
         self.close()
         pass
@@ -539,7 +542,8 @@ class ANTSelector(QWidget):
                          profiles=None,
                          device_number=0,
                          show=True,
-                         connect=False):
+                         connect=False,
+                         timeout=20):
         """
         Initiates device search and displays avaialbe connections on pop-up.
 
@@ -558,7 +562,6 @@ class ANTSelector(QWidget):
 
         """
         # restart timeout counter
-        self.timeout_counter = 0
         self.searchnig = True
 
         i_profile = 0
@@ -587,6 +590,14 @@ class ANTSelector(QWidget):
         if show:
             # Show selector GUI window
             self.show()
+
+        # Start Timeout Counter
+        if timeout is not None:
+            self.timeout_timer.timeout.connect(self.timeout)
+            self.timeout_timer.start(timeout * 1000)
+
+    def timeout(self):
+        self.timeout_signal.emit(False)
 
     def wait_for_device_connection(self, channel_num, connect=False):
         """Wait for a device connection after opening a channel
@@ -637,6 +648,7 @@ class ANTSelector(QWidget):
 
         if channel is not None:
 
+            self.timeout_timer.stop()
             # if connect kwarg is true, automatically select device to connect
             if connect:
                 self.selected_signal.emit(channel.number)
@@ -648,15 +660,13 @@ class ANTSelector(QWidget):
                 self.available_devices_list.addItem(ANTListItem(channel))
 
         else:
-            self.timeout_counter += 1
             print("Unsuccessful pairing!")
-            if self.timeout_counter == self.CHANNEL_TIMEOUT_COUNT_THRESHOLD:
-                self.searching = False
-                self.timeout_signal.emit(False)
+            self.searching = False
 
     def closeEvent(self, event):
         if self.searching:
             self.cancel()
+        self.available_devices_list.clear()
         event.accept()
         pass
 
