@@ -302,19 +302,11 @@ class ANTWindow(QWidget):
             else:
                 cfg_dict[cfg_keys[i]] = usr_in
 
-        try:
-            channel = int(self.status_channel_number_combo.currentText())
-        except ValueError:
-            self.message_viewer.append('Error: Channel must be selected to '
-                                       'send user configuration message!')
-            return
-
-        self.ANT.set_config(channel, **cfg_dict)
+        self.ANT.set_config(**cfg_dict)
 
     def send_track_resistance(self):
         grade_boxes = [self.grade_box, self.crr_box]
-        grade_keys = ['grade', 'wheel_diameter_offset', 'bike_weight',
-                      'bike_wheel_diameter', 'gear_ratio']
+        grade_keys = ['grade', 'c_rr']
         grade_dict = {}
         for i, box in enumerate(grade_boxes):
             try:
@@ -324,13 +316,7 @@ class ANTWindow(QWidget):
             else:
                 grade_dict[grade_keys[i]] = usr_in
 
-        try:
-            channel = int(self.status_channel_number_combo.currentText())
-        except ValueError:
-            self.message_viewer.append('Error: Channel must be selected to '
-                                       'send user configuration message!')
-
-        self.ANT.set_track_resistance(channel, **grade_dict)
+        self.ANT.set_track_resistance(**grade_dict)
 
     # def send_tx_msg(self, msg):
     #     tx_thread = ANTWorker(self,

@@ -16,7 +16,7 @@ from datetime import datetime
 from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import DriverException
-from libAnt.message import BroadcastMessage
+from libAnt.message import BroadcastMessage, ChannelResponseMessage
 # import libAnt.exceptions as e
 # import libAnt.constants as c
 # import logging
@@ -189,7 +189,15 @@ class ANTDevice(QObject):
                 self.datas.append(self.data)
                 ANT_channel.messages.append(f'{msg}')
 
+            # Special case for acknowledged transmission event
+            elif (type(msg) == ChannelResponseMessage
+                  and msg.event_code == 0x05):
+                self.channels[msg.channel].messages.append('Tx Success!')
+
             else:
+                print(type(msg))
+                if type(msg) == ChannelResponseMessage:
+                    print(msg.event_code)
                 self.messages.append(f'{msg}')
 
         def fail_handler(msg):
@@ -249,7 +257,7 @@ class ANTDevice(QObject):
         """Start the USB loop of the ANT USB Node.
 
         Function will attempt to construct the USB node and determine if
-        starting the thread is necessary. Returns the start 
+        starting the thread is necessary. Returns the start
         thread object if created so calling objects can connect signals upon
         completion. Calling function will need to connect slots to completion
         signals and start the thread.
@@ -280,23 +288,28 @@ class ANTDevice(QObject):
     def init_channels(self, success):
         """Initialize channel attribures of ANT device."""
         if success:
-            self.channels = \
-                [ANTChannel(i) for i in range(self.node.max_channels)]
+            self.channels = [ANTChannel(i)
+                             for i in range(self.node.max_channels)]
 
     def update_connection_status(self, connected: bool):
         """Update connected attribute and emit connected signal."""
         self.connected = connected
         self.connection_signal.emit(connected)
 
-    @pyqtSlot()
+        if connected:
+            for channel in self.channels:
+                if channel.device_type == 17:
+                    self.FE_C_channel = channel.number
+
+    @ pyqtSlot()
     def callback(self, msg):
         self.success_signal.emit(msg)
 
-    @pyqtSlot()
+    @ pyqtSlot()
     def error_callback(self, emsg):
         self.failure_signal.emit(emsg)
 
-    def set_track_resistance(self, channel, **kwargs):
+    def set_track_resistance(self, **kwargs):
         """Create and send a track resistance page to the device.
 
         Parameters
@@ -310,12 +323,22 @@ class ANTDevice(QObject):
 
         """
 
+        if self.FE_C_channel is not None:
+            channel = self.FE_C_channel
+
+        else:
+            self.node.add_msg(
+                "Warning: Cannot Send Track Resistance message without FE-C Channel")
+            return
+
+        channel = self.FE_C_channel
         self.grade = kwargs.get("grade")
         grade = p.set_grade(channel, **kwargs)
         self.send_tx_msg(grade)
-        self.node.add_msg(f"Track Resistance Command Sent: {kwargs}", channel)
+        self.channels[channel].messages.append(
+            f"Track Resistance Command Sent: {kwargs}")
 
-    def set_config(self, channel, **kwargs):
+    def set_config(self, **kwargs):
         """Create and send a user config page to the device.
 
         Parameters
@@ -327,9 +350,17 @@ class ANTDevice(QObject):
         -------
         None.
         """
+        if self.FE_C_channel is not None:
+            channel = self.FE_C_channel
+
+        else:
+            self.node.add_msg(
+                "Warning: Cannot Send User Config message without FE-C Channel")
+            return
         cfg = p.set_user_config(channel, **kwargs)
         self.send_tx_msg(cfg)
-        self.node.add_msg(f"User Config Command Sent: {kwargs}", channel)
+        self.channels[channel].messages.append(
+            f"User Config Command Sent: {kwargs}")
 
     def send_tx_msg(self, msg):
         """Send tx message to ANT Device"""
@@ -363,6 +394,7 @@ class ANTDevice(QObject):
 
             channel_close_thread.done_signal.connect(
                 lambda: self.update_connection_status(False))
+        self.FE_C_channel = None
 
     def close_channel(self, channel_num, connection=None):
         """Close channel and remove channel object from node."""
@@ -375,36 +407,36 @@ class ANTDevice(QObject):
             lambda: self.connection_signal.emit(False))
         close_thread.start()
 
-    @property
+    @ property
     def log_name(self):
         """log_name attribute getter."""
         return self._log_name
 
-    @log_name.setter
+    @ log_name.setter
     def log_name(self, log_name: str):
         self._log_name = log_name
         for channel in self.channels:
             if channel.is_active:
                 channel.log_name = log_name
 
-    @property
+    @ property
     def log_path(self):
         """log_path attribute getter."""
         return self._log_path
 
-    @log_path.setter
+    @ log_path.setter
     def log_path(self, log_path: str):
         self._log_name = log_path
         for channel in self.channels:
             if channel.is_active:
                 channel.log_path = log_path
 
-    @property
+    @ property
     def log_data_flag(self):
         """Getter for log_data_flag attribute."""
         return self._log_data_flag
 
-    @log_data_flag.setter
+    @ log_data_flag.setter
     def log_data_flag(self, set_value: bool):
         self._log_data_flag = set_value
         for channel in self.channels:
@@ -436,14 +468,14 @@ class ANTChannel():
         self.log_path = ""
         self.log_start_time = None
         self.log_file = None
-        self._device_profiles = \
-            {value: key for key, value in ANTDevice.device_types.items()}
+        self._device_profiles = {value: key for key,
+                                 value in ANTDevice.device_types.items()}
 
-    @property
+    @ property
     def device_type(self):
         return self._device_type
 
-    @device_type.setter
+    @ device_type.setter
     def device_type(self, value):
         if value in self._device_profiles:
             self._device_type = value
@@ -451,15 +483,15 @@ class ANTChannel():
         else:
             raise ValueError(f"Invalid device type: {value}")
 
-    @property
+    @ property
     def profile(self):
         return self._profile
 
-    @property
+    @ property
     def log_data_flag(self):
         return self._log_data_flag
 
-    @log_data_flag.setter
+    @ log_data_flag.setter
     def log_data_flag(self, set_value: bool):
         self._log_data_flag = set_value
         if set_value:

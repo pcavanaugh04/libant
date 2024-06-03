@@ -875,7 +875,7 @@ class ChannelResponseMessage(Message):
                 return(f"Channel: {self.channel} Close Success")
 
             case c.EVENT_TRANSFER_TX_COMPLETED:
-                return("Tx Success")
+                return(self)
 
             case c.MESSAGE_SIZE_EXCEEDS_LIMIT:
                 raise(e.MessageSizeExceedsLimit(self.channel))

@@ -159,9 +159,9 @@ class Pump(threading.Thread):
 
                     except ex.TxFail as e:
                         self._onFailure(e)
-                        self.tx_manager.remove_task(e.channel)
-                        self.output_manager.put_msg(False, e.channel)
-                        self.output_manager.join()
+                        self._tx.remove_task(e.channel)
+                        self._out.put_msg(False, e.channel)
+                        self._out.join()
 
                     except ex.RxFailGoToSearch as e:
                         self._onFailure(e)
