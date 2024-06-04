@@ -466,6 +466,7 @@ class ANTSelector(QWidget):
         self.cancel_selection_button.clicked.connect(self.cancel)
         self.searching = False
         self.timeout_timer = QTimer()
+        self.timeout_timer.setSingleShot(True)
         # self.update_timer = QTimer()
         # self.update_timer.timeout.connect(self.update)
         # self.update_timer.internal_timer.stop()

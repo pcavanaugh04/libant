@@ -17,7 +17,7 @@ from PyQt5.QtCore import pyqtSlot, pyqtSignal, QObject, QThread
 from libAnt.node import Node
 from libAnt.drivers.usb import DriverException
 from libAnt.message import BroadcastMessage, ChannelResponseMessage
-# import libAnt.exceptions as e
+import libAnt.exceptions as e
 # import libAnt.constants as c
 # import logging
 import functools
@@ -195,9 +195,6 @@ class ANTDevice(QObject):
                 self.channels[msg.channel].messages.append('Tx Success!')
 
             else:
-                print(type(msg))
-                if type(msg) == ChannelResponseMessage:
-                    print(msg.event_code)
                 self.messages.append(f'{msg}')
 
         def fail_handler(msg):
@@ -205,16 +202,14 @@ class ANTDevice(QObject):
                 self.channels[msg.channel].messages.append(f'{msg}')
             else:
                 self.messages.append(f'{msg}')
-            # if isinstance(msg, RxSearchTimeout):
-            #     if self.connected:
-            #         # self.close_channel(connection_timeout=True)
-            #         logger.warning("ANT+ Trainer Connection Timeout. "
-            #                        "Disconnecting Device")
-            #     else:
-            #         # self.close_channel(search_timeout=True)
-            #         logger.console("ANT+ Trainer Search Timeout. "
-            #                        "No Device Avaliable")
-            #     pass
+
+            if isinstance(msg, e.RxSearchTimeout):
+                if self.connected and self.channels[msg.channel].is_active:
+                    self.disconnect()
+                    # logger.warning("ANT+ Trainer Connection Timeout. "
+                    # "Disconnecting Device")
+                else:
+                    pass
 
             # if isinstance(msg, DriverException):
             #     self.clear_device()
@@ -301,11 +296,11 @@ class ANTDevice(QObject):
                 if channel.device_type == 17:
                     self.FE_C_channel = channel.number
 
-    @ pyqtSlot()
+    @pyqtSlot()
     def callback(self, msg):
         self.success_signal.emit(msg)
 
-    @ pyqtSlot()
+    @pyqtSlot()
     def error_callback(self, emsg):
         self.failure_signal.emit(emsg)
 
@@ -382,15 +377,19 @@ class ANTDevice(QObject):
         else:
             self.send_tx_msg(msg)
 
-    def disconnect(self):
+    def disconnect(self, timeout=False):
         """Disconnect all active channels on the ANT device."""
 
+        print("In ANT_device disconnect method")
         for channel in self.node.channels:
             if (channel is not None) and not (channel.closing):
-                channel_close_thread = ANTWorker(self, channel.close)
+                channel_close_thread = ANTWorker(self,
+                                                 channel.close
+                                                 )
                 channel_close_thread.done_signal.connect(
                     self.node.clear_channel)
                 channel_close_thread.start()
+                self.channels[channel.number].is_active = False
 
             channel_close_thread.done_signal.connect(
                 lambda: self.update_connection_status(False))
@@ -407,41 +406,44 @@ class ANTDevice(QObject):
             lambda: self.connection_signal.emit(False))
         close_thread.start()
 
-    @ property
+    @property
     def log_name(self):
         """log_name attribute getter."""
         return self._log_name
 
-    @ log_name.setter
+    @log_name.setter
     def log_name(self, log_name: str):
         self._log_name = log_name
         for channel in self.channels:
             if channel.is_active:
                 channel.log_name = log_name
 
-    @ property
+    @property
     def log_path(self):
         """log_path attribute getter."""
         return self._log_path
 
-    @ log_path.setter
+    @log_path.setter
     def log_path(self, log_path: str):
-        self._log_name = log_path
+        self._log_path = log_path
         for channel in self.channels:
             if channel.is_active:
                 channel.log_path = log_path
 
-    @ property
+    @property
     def log_data_flag(self):
         """Getter for log_data_flag attribute."""
         return self._log_data_flag
 
-    @ log_data_flag.setter
+    @log_data_flag.setter
     def log_data_flag(self, set_value: bool):
         self._log_data_flag = set_value
         for channel in self.channels:
             if channel.is_active:
                 channel.log_data_flag = set_value
+
+    def close_log_file(self):
+        self.log_data_flag = False
 
 
 class ANTChannel():
@@ -471,11 +473,11 @@ class ANTChannel():
         self._device_profiles = {value: key for key,
                                  value in ANTDevice.device_types.items()}
 
-    @ property
+    @property
     def device_type(self):
         return self._device_type
 
-    @ device_type.setter
+    @device_type.setter
     def device_type(self, value):
         if value in self._device_profiles:
             self._device_type = value
@@ -483,15 +485,15 @@ class ANTChannel():
         else:
             raise ValueError(f"Invalid device type: {value}")
 
-    @ property
+    @property
     def profile(self):
         return self._profile
 
-    @ property
+    @property
     def log_data_flag(self):
         return self._log_data_flag
 
-    @ log_data_flag.setter
+    @log_data_flag.setter
     def log_data_flag(self, set_value: bool):
         self._log_data_flag = set_value
         if set_value:

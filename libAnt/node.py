@@ -171,7 +171,6 @@ class Pump(threading.Thread):
                         com_channel = self._out.channels[e.channel]
                         if not com_channel.first_message_flag:
                             # Change closing status on timed out channel
-                            com_channel.closing = True
                             # print("-----------IN Exception Handling-------------")
                             # print(
                             #     f"Channel Out queue contents: {list(com_channel._out.queue)}")
@@ -182,6 +181,11 @@ class Pump(threading.Thread):
                             sleep(0.1)
                             com_channel._out.put(e)
                             print(f"Timeout Occurred! on channel: {e.channel}")
+
+                        else:
+                            print(
+                                f"------- Setting Channel Search Timeout to True on Channel: {e.channel} ---------")
+                            com_channel.search_timeout_flag = True
 
                     except Exception as e:
                         traceback.print_exc()
@@ -673,6 +677,7 @@ class Channel(threading.Thread):
         self.frequency = channel_frequency
         self.msg_freq = channel_msg_freq
         self.search_timeout = channel_search_timeout
+        self.search_timeout_flag = False
         self.first_message_flag = False
         self.messages = []
         self.id = None
@@ -713,7 +718,7 @@ class Channel(threading.Thread):
         self.closing = True
         # timeout message will close channel automatically, so only send close
         # channel control message if channel is being closed by user
-        if not timeout:
+        if not (timeout or self.search_timeout_flag):
             print("Do we get to putting channel close Message in ctrl queue")
             self._ctrl.put(m.CloseChannelMessage(self.number))
             self._ctrl.join()
@@ -724,6 +729,9 @@ class Channel(threading.Thread):
 
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
+        print(
+            f"Contents of cfg queue at first message flag: {list(self.cfig_manager.queue)}"
+            f" Tasks remaining: {self.cfig_manager.unfinished_tasks}")
         self.cfig_manager.join()
 
         print(
@@ -799,10 +807,12 @@ class Channel(threading.Thread):
                     # self._tx.task_done()
                     self.tx_manager.put_msg(tx_msg, self.number)
                     self.tx_manager.join()
-                # send any tx messages in queue
+
+                # Look out for RxSearchTimeouts in runtime.
+                # This indicates channel should be closed
+                    # send any tx messages in queue
 
                 sleep(0.1)
-                pass
 
         except Exception:
             pass
