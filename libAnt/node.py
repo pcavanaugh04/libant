@@ -851,7 +851,6 @@ class Channel(threading.Thread):
 
     def send_tx_msg(self, msg):
         self._tx.put(msg)
-        print("In Channel send tx msg method")
         status = self._out.get(block=True)
         return status
 

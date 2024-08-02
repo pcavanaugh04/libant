@@ -71,6 +71,7 @@ class ANTDevice(QObject):
         # self.wheel_diameter = None
         self.wheel_diameter = 0.7
         self.FE_C_channel = None
+        self.user_weight = 75  # User Weight in kg
 
         # Pass in logger functionality
         self.logger = logger
@@ -353,6 +354,8 @@ class ANTDevice(QObject):
                 "Warning: Cannot Send User Config message without FE-C Channel")
             return
         cfg = p.set_user_config(channel, **kwargs)
+        if "user_weight" in kwargs:
+            self.user_weight = kwargs['user_weight']
         self.send_tx_msg(cfg)
         self.channels[channel].messages.append(
             f"User Config Command Sent: {kwargs}")

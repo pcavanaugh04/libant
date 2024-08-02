@@ -95,7 +95,11 @@ def set_user_config(channel_num,
     bike_wheel_d_set = int(bike_wheel_diameter * 0.1)
     gear_ratio_set = int(gear_ratio / 0.03)
 
-    config_msg = UserConfigurationPage(channel_num)
+    config_msg = UserConfigurationPage(channel_num,
+                                       user_weight=usr_wt_set,
+                                       bike_weight=bike_weight_set,
+                                       bike_wheel_diameter=bike_wheel_d_set,
+                                       gear_ratio=gear_ratio_set)
     return config_msg
 
 
