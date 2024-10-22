@@ -209,10 +209,10 @@ class Pump(threading.Thread):
                         raise e
                     finally:
                         self._control.remove_task(w.channel, w)
-                        print(
-                            "Contents of ctrl queue at request process: "
-                            f"{list(self._control.queue)} "
-                            f"Tasks in queue: {self._control.unfinished_tasks}")
+                        # print(
+                        #     "Contents of ctrl queue at request process: "
+                        #     f"{list(self._control.queue)} "
+                        #     f"Tasks in queue: {self._control.unfinished_tasks}")
                         self._out.put_msg(msg, w.channel)
 
             # Channel Event Messages in response to control messages
@@ -304,9 +304,9 @@ class Pump(threading.Thread):
                 com_channel._out.get()
                 com_channel._out.task_done()
                 com_channel.first_message_flag = True
-                print(
-                    f"Contents of ctrl queue at first message flag: {list(self._control.queue)}"
-                    f" Tasks remaining: {self._control.unfinished_tasks}")
+                # print(
+                #     f"Contents of ctrl queue at first message flag: {list(self._control.queue)}"
+                #     f" Tasks remaining: {self._control.unfinished_tasks}")
 
             return bmsg
 
@@ -729,14 +729,14 @@ class Channel(threading.Thread):
 
         # Will always need an unassign channel message
         self.cfig_manager.put(m.UnassignChannelMessage(self.number))
-        print(
-            f"Contents of cfg queue at first message flag: {list(self.cfig_manager.queue)}"
-            f" Tasks remaining: {self.cfig_manager.unfinished_tasks}")
+        # print(
+        #     f"Contents of cfg queue at first message flag: {list(self.cfig_manager.queue)}"
+        #     f" Tasks remaining: {self.cfig_manager.unfinished_tasks}")
         self.cfig_manager.join()
 
-        print(
-            f"Contents of ctrl queue at first message flag: {list(self.ctrl_manager.queue)}"
-            f" Tasks remaining: {self.ctrl_manager.unfinished_tasks}")
+        # print(
+        #     f"Contents of ctrl queue at first message flag: {list(self.ctrl_manager.queue)}"
+        #     f" Tasks remaining: {self.ctrl_manager.unfinished_tasks}")
 
         sleep(0.5)
         # Stop thread execution
@@ -752,15 +752,14 @@ class Channel(threading.Thread):
             # Channel creation starts with waiting for first successful message
             self._out.put("Blocking until First Message")
             self.searching = True
-            print(f"Before out.join in channel {self.number} run statement")
             self._out.join()
 
             # Diagnositc printing of channel parameters
-            print("------------- From Inside Channel Run Method --------------")
-            print(f"Channel {self.number} Type: {self._type}")
-            print(f"Channel {self.number} Device Type: {self.device_type}")
-            print(f"Channel {self.number} Device Number: {self.device_number}")
-            print("------------- End of Channel Run Method diagnostic --------------")
+            # print("------------- From Inside Channel Run Method --------------")
+            # print(f"Channel {self.number} Type: {self._type}")
+            # print(f"Channel {self.number} Device Type: {self.device_type}")
+            # print(f"Channel {self.number} Device Number: {self.device_number}")
+            # print("------------- End of Channel Run Method diagnostic --------------")
 
             # Thread will reactivate once an item has been recognized and removed
             # from the queue. If the channel times out, the pump will place
@@ -770,7 +769,7 @@ class Channel(threading.Thread):
                 err = self._out.get(block=True, timeout=0.5)
 
             except Empty:
-                print("Were in the passing statement!")
+                # print("Were in the passing statement!")
                 pass
 
             else:

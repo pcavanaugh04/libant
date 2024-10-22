@@ -384,6 +384,12 @@ class ANTDevice(QObject):
         """Disconnect all active channels on the ANT device."""
 
         print("In ANT_device disconnect method")
+
+        # Close log file, if active
+        if self.log_data_flag:
+            self.log_data_flag = False
+
+        # Close channels
         for channel in self.node.channels:
             if (channel is not None) and not (channel.closing):
                 channel_close_thread = ANTWorker(self,

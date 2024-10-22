@@ -202,18 +202,17 @@ class ANTWindow(QWidget):
         """
         channel = self.ANT.node.channels[channel_num]
         # Return if device is anything other than FE-C channel
-        print(
-            f"This is where we'd connect to other stuff! on channel {channel_num}")
-
         if not channel.device_type == 17:
             return
 
         # Verify parameters
-        print("------ Device Channel Search Params ------")
-        print(f"Channel Adress: {channel}")
-        print(f"Channel number: {channel.number}")
-        print(f"Device Number: {channel.device_number}")
-        profiles = ['PWR', 'SPD', 'CD', 'SPD+CD']
+        # print("------ Device Channel Search Params ------")
+        # print(f"Channel Adress: {channel}")
+        # print(f"Channel number: {channel.number}")
+        # print(f"Device Number: {channel.device_number}")
+        # profiles = ['PWR', 'SPD', 'CD', 'SPD+CD']
+        profiles = ['PWR']
+
         self.search_window.open_search_mode(
             device_number=channel.device_number,
             profiles=profiles,
