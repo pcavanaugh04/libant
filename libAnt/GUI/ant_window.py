@@ -39,7 +39,6 @@ class ANTWindow(QWidget):
         # path = os.path.join(os.getcwd(), "libAnt", "GUI", "ant_UI.ui")
         self.UI_elements = uic.loadUi(ui_path, self)
         self.ANT = ANT_device
-        self.search_window = None
         self.current_channel = None
         self.is_child = is_child
 
@@ -53,6 +52,7 @@ class ANTWindow(QWidget):
         self.search_window.search_signal.connect(self.device_channel_search)
         self.search_window.timeout_signal.connect(
             self.handle_search_selector_timeout)
+        self.search_window.closed.connect(self.enable_search_button)
 
         # Define avaliable Device Profiles
         self.dev_profiles = self.ANT.dev_profiles
@@ -63,6 +63,7 @@ class ANTWindow(QWidget):
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(
             self.send_track_resistance)
+        self.search_window.closeEvent
 
         # Demo Save Data button
         self.save_data_button.clicked.connect(self.save_data_test)
@@ -168,7 +169,9 @@ class ANTWindow(QWidget):
         # Generate a new session of ANT selector window
         self.search_window.open_search_mode(profile=profile,
                                             device_number=device_number)
-
+        # Disable Open Search Selector Button
+        self.open_search_button.setEnabled(False)
+        
     def node_startup_visual_update(self, success):
         """Callback for visual updates upon successful node USB loop start."""
         if success:
@@ -422,6 +425,9 @@ class ANTWindow(QWidget):
             self.ANT.log_name = "Test_Log"
             self.ANT.log_path = save_folder_dir
             self.ANT.log_data_flag = True
+            
+    def enable_search_button(self):
+        self.open_search_button.setEnabled(True)
 
     @pyqtSlot()
     def returnPressedSlot():
@@ -446,6 +452,7 @@ class ANTSelector(QWidget):
     selected_signal = pyqtSignal(int)
     search_signal = pyqtSignal(int)
     timeout_signal = pyqtSignal(bool)
+    closed = pyqtSignal()
     CHANNEL_TIMEOUT_COUNT_THRESHOLD = 2
 
     def __init__(self, ANT):
@@ -653,8 +660,9 @@ class ANTSelector(QWidget):
         if self.searching:
             self.cancel()
         self.available_devices_list.clear()
+        self.closed.emit()
         event.accept()
-        pass
+        
 
 
 class ANTListItem(QListWidgetItem):
