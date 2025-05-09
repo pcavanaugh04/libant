@@ -171,7 +171,7 @@ class ANTWindow(QWidget):
                                             device_number=device_number)
         # Disable Open Search Selector Button
         self.open_search_button.setEnabled(False)
-        
+
     def node_startup_visual_update(self, success):
         """Callback for visual updates upon successful node USB loop start."""
         if success:
@@ -243,8 +243,6 @@ class ANTWindow(QWidget):
                 ANT_ch.data = FECData()
                 print(f"------ {ANT_ch.data.prev_trainer_msg} ------")
                 print(f"ANT Channel Address: {ANT_ch.data}")
-                print("DO WE GET HERE?????")
-                print("A")
             case 121:
                 ANT_ch.data = SPDCDData()
 
@@ -404,8 +402,8 @@ class ANTWindow(QWidget):
             "Selection Process Timeout. No devices available!")
         self.search_window.status_label.setText(
             "Device Search Timeout! Closing Search Window...")
-        self.ANT.logger.warn("Timeout occurred! Closing serach window.")
-        QTimer.singleShot(3000, self.search_window.cancel)
+        self.ANT.logger.warn("Timeout occurred! Closing search window.")
+        QTimer.singleShot(3000, self.search_window.close)
 
     def save_data_test(self):
         """Test function to demo save features of multichannel ANT handling."""
@@ -425,7 +423,7 @@ class ANTWindow(QWidget):
             self.ANT.log_name = "Test_Log"
             self.ANT.log_path = save_folder_dir
             self.ANT.log_data_flag = True
-            
+
     def enable_search_button(self):
         self.open_search_button.setEnabled(True)
 
@@ -466,10 +464,11 @@ class ANTSelector(QWidget):
         file_path = os.path.abspath(__file__)
         ui_path = os.path.join(os.path.dirname(file_path), "ant_selection.ui")
         self.UI_elements = uic.loadUi(ui_path, self)
+        self.close_from_cancel_button = False
 
         # Button Connections
         self.select_device_button.clicked.connect(self.select_device)
-        self.cancel_selection_button.clicked.connect(self.cancel)
+        self.cancel_selection_button.clicked.connect(self.close)
         self.searching = False
         self.timeout_timer = QTimer()
         self.timeout_timer.setSingleShot(True)
@@ -504,6 +503,9 @@ class ANTSelector(QWidget):
         # Emit selected device channel to main program
         self.searching = False
         self.selected_signal.emit(dev_channel.number)
+
+        # flag the close event to bypass the mass cancel
+        self.close_from_cancel_button = True
         self.close()
 
     def emit_connection_channel(self, channel_num):
@@ -512,22 +514,10 @@ class ANTSelector(QWidget):
         self.search_signal.emit(channel_num)
         self.ANT.update_connection_status(connected=True)
 
-    def cancel(self):
-        print("Device Selection Cancelled!")
-        for channel in self.ANT.node.channels:
-            if (channel is not None) and not (channel.closing):
-                channel_close_thread = ANTWorker(self, channel.close)
-                channel_close_thread.done_signal.connect(
-                    self.ANT.node.clear_channel)
-                channel_close_thread.start()
-        self.ANT.update_connection_status(False)
-        self.available_devices_list.clear()
-        self.close()
-        pass
-
     def showEvent(self, event):
         # Open all available channels on the node
         self.status_label.setText("Searching For Devices...")
+        self.close_from_cancel_button = False
         event.accept()
         pass
 
@@ -536,7 +526,7 @@ class ANTSelector(QWidget):
                          device_number=0,
                          show=True,
                          connect=False,
-                         timeout=20):
+                         timeout=10):
         """
         Initiates device search and displays avaialbe connections on pop-up.
 
@@ -555,7 +545,7 @@ class ANTSelector(QWidget):
 
         """
         # restart timeout counter
-        self.searchnig = True
+        self.searching = True
 
         i_profile = 0
         # Open all available channels on the node
@@ -590,6 +580,8 @@ class ANTSelector(QWidget):
             self.timeout_timer.start(timeout * 1000)
 
     def timeout(self):
+        # ReInit the timer to clear any connections
+        # self.timeout_timer.timeout.disconnect()
         self.timeout_signal.emit(False)
 
     def wait_for_device_connection(self, channel_num, connect=False):
@@ -642,6 +634,7 @@ class ANTSelector(QWidget):
         if channel is not None:
 
             self.timeout_timer.stop()
+            # self.timeout_timer.timeout.disconnect()
             # if connect kwarg is true, automatically select device to connect
             if connect:
                 self.selected_signal.emit(channel.number)
@@ -656,13 +649,36 @@ class ANTSelector(QWidget):
             print("Unsuccessful pairing!")
             self.searching = False
 
+    def cancel(self):
+        """Cancel device selection process and cleanly exit the window."""
+        print("Device Selection Cancelled!")
+        # Flag for close event
+        self.close_from_cancel_button = True
+
+        # Cleanly disconnect any open channels on the ANT device
+        for channel in self.ANT.node.channels:
+            if (channel is not None) and not (channel.closing):
+                channel_close_thread = ANTWorker(self, channel.close)
+                channel_close_thread.done_signal.connect(
+                    self.ANT.node.clear_channel)
+                channel_close_thread.start()
+        # Send status update to ANT device that all connections are terminated
+        self.ANT.update_connection_status(False)
+        # self.available_devices_list.clear()
+        # Stop and disconnect the timeout timer
+        self.timeout_timer.stop()
+        self.timeout_timer.timeout.disconnect()
+        self.close()
+
     def closeEvent(self, event):
-        if self.searching:
+        # If close event was not called from the cancel method, call the cancel
+        # method to cleanly cancel any search processes
+        if not self.close_from_cancel_button:
             self.cancel()
         self.available_devices_list.clear()
+        # emit closed signal back to ANT Window to re-enable search button
         self.closed.emit()
         event.accept()
-        
 
 
 class ANTListItem(QListWidgetItem):
