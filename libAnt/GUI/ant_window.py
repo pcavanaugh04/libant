@@ -52,13 +52,15 @@ class ANTWindow(QWidget):
         self.search_window.search_signal.connect(self.device_channel_search)
         self.search_window.timeout_signal.connect(
             self.handle_search_selector_timeout)
-        self.search_window.closed.connect(self.enable_search_button)
+        self.search_window.cancelled.connect(self.enable_search_button)
 
         # Define avaliable Device Profiles
         self.dev_profiles = self.ANT.dev_profiles
 
         # Button Connections
         self.open_search_button.clicked.connect(self.open_search_selection)
+        self.close_all_channels_button.clicked.connect(
+            self.close_all_channels)
         self.close_channel_button.clicked.connect(self.close_channel)
         self.user_config_button.clicked.connect(self.send_usr_cfg)
         self.track_resistance_button.clicked.connect(
@@ -249,6 +251,7 @@ class ANTWindow(QWidget):
         # change index to new channel
         if str(channel_num) == self.status_channel_number_combo.currentText():
             self.channel_field_update(ANT_ch)
+        self.close_all_channels_button.setEnabled(True)
 
     def channel_field_update(self, ANT_ch):
         """Visual updates to device fields on UI."""
@@ -266,6 +269,21 @@ class ANTWindow(QWidget):
             self.device_type_box.setText("N/A")
             self.channel_state_box.setText("N/A")
 
+    def close_all_channels(self):
+        """Close all available channels on the node"""
+        # Cleanly disconnect any open channels on the ANT device
+        for channel in self.ANT.node.channels:
+            if (channel is not None) and not (channel.closing):
+                channel_close_thread = ANTWorker(self,
+                                                 channel.close
+                                                 )
+                channel_close_thread.done_signal.connect(
+                    self.ANT.node.clear_channel)
+                channel_close_thread.done_signal.connect(
+                    lambda _, ch_num=channel.number: self.channel_remove(ch_num))
+                channel_close_thread.start()
+        self.open_search_button.setEnabled(True)
+
     def close_channel(self):
         channel_num = int(self.status_channel_number_combo.currentText())
         close_thread = ANTWorker(self,
@@ -280,7 +298,7 @@ class ANTWindow(QWidget):
             self.status_channel_number_combo.removeItem(index)
             self.channel_type_box.clear()
             self.network_number_box.clear()
-            self.device_id_box.clear()
+            self.device_number_box.clear()
             self.device_type_box.clear()
             self.channel_state_box.clear()
         else:
@@ -426,6 +444,7 @@ class ANTWindow(QWidget):
 
     def enable_search_button(self):
         self.open_search_button.setEnabled(True)
+        self.close_all_channels_button.setEnabled(False)
 
     @pyqtSlot()
     def returnPressedSlot():
@@ -450,7 +469,7 @@ class ANTSelector(QWidget):
     selected_signal = pyqtSignal(int)
     search_signal = pyqtSignal(int)
     timeout_signal = pyqtSignal(bool)
-    closed = pyqtSignal()
+    cancelled = pyqtSignal()
     CHANNEL_TIMEOUT_COUNT_THRESHOLD = 2
 
     def __init__(self, ANT):
@@ -668,6 +687,7 @@ class ANTSelector(QWidget):
         # Stop and disconnect the timeout timer
         self.timeout_timer.stop()
         self.timeout_timer.timeout.disconnect()
+        self.cancelled.emit()
         self.close()
 
     def closeEvent(self, event):
@@ -677,7 +697,6 @@ class ANTSelector(QWidget):
             self.cancel()
         self.available_devices_list.clear()
         # emit closed signal back to ANT Window to re-enable search button
-        self.closed.emit()
         event.accept()
 
 
