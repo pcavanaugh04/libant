@@ -674,19 +674,22 @@ class ANTSelector(QWidget):
         # Flag for close event
         self.close_from_cancel_button = True
 
-        # Cleanly disconnect any open channels on the ANT device
-        for channel in self.ANT.node.channels:
-            if (channel is not None) and not (channel.closing):
-                channel_close_thread = ANTWorker(self, channel.close)
-                channel_close_thread.done_signal.connect(
-                    self.ANT.node.clear_channel)
-                channel_close_thread.start()
+        if self.ANT.node is not None:
+            # Cleanly disconnect any open channels on the ANT device
+            for channel in self.ANT.node.channels:
+                if (channel is not None) and not (channel.closing):
+                    channel_close_thread = ANTWorker(self, channel.close)
+                    channel_close_thread.done_signal.connect(
+                        self.ANT.node.clear_channel)
+                    channel_close_thread.start()
+
         # Send status update to ANT device that all connections are terminated
         self.ANT.update_connection_status(False)
         # self.available_devices_list.clear()
         # Stop and disconnect the timeout timer
         self.timeout_timer.stop()
-        self.timeout_timer.timeout.disconnect()
+        if self.timeout_timer.receivers(self.timeout_timer.timeout) > 0:
+            self.timeout_timer.timeout.disconnect()
         self.cancelled.emit()
         self.close()
 
